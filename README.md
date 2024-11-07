@@ -1,2 +1,2 @@
 # prime_factorization
-Mathematical practical course as part of the module: 61182. Content: Prime factorization
+This repository contains logic for prime factorization using elliptic curves.
