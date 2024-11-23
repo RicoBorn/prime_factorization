@@ -84,13 +84,26 @@ public:
 };
 
 /**
- * @class DiscriminantMultipleOfN
+ * @class DiscriminantMultipleOfNException
  * @brief Custom exception thrown when discriminant of elliptic curve is multiple of N.
  */
-class DiscriminantMultipleOfN : public std::invalid_argument {
+class DiscriminantMultipleOfNException : public std::invalid_argument {
 public:
-    explicit DiscriminantMultipleOfN(const std::string& message)
+    explicit DiscriminantMultipleOfNException(const std::string& message)
         : std::invalid_argument(message) {}
+};
+
+/**
+ * @class UnsuccessfulLenstraAlgorithmException
+ * @brief Custom exception thrown when reaching end of lenstra algorithm, that is, it terminated unsuccessfully.
+ */
+class UnsuccessfulLenstraAlgorithmException : public std::runtime_error {
+public:
+    explicit UnsuccessfulLenstraAlgorithmException(const std::string& message)
+        : std::runtime_error(message) {}
+
+    explicit UnsuccessfulLenstraAlgorithmException(const char * message)
+        : std::runtime_error(message) {}
 };
 
 
@@ -142,10 +155,8 @@ public:
      * is computed with modular reduction at each step to avoid overflow in intermediate values.
      */
     EllipticCurve(const mpz_class& a, const mpz_class& b, const mpz_class& n) : a(a), b(b), n(n) {
-        // Calculate discriminant with modular reduction at each step (to  minimizes growth of intermediate results)
-        mpz_class discriminant = (((4 * a) % n) * (a % n) * (a % n)) % n;  // (4 * a^3) mod n
-        const mpz_class tpm_term = (((27 * b) % n) * (b % n)) % n;        // (27 * b^2) mod n
-        discriminant = (discriminant + tpm_term) % n;           // (4 * a^3 + 27 * b^2) mod n
+        // Calculate discriminant with modular reduction for intermediate results (to prevent growth of values)
+        mpz_class discriminant = (((4 * a * a * a) % n) + ((27 * b * b) % n)) % n;  // (4 * a^3 + 27 * b^2) mod n
 
         // Check if discriminant is invertible in Z/nZ
         mpz_class gcd_result;
@@ -256,6 +267,7 @@ public:
      * @throws NonInvertibleElementException if the slope denominator is not invertible.
      */
     ECPoint add_unequal_points(const ECPoint& P, const ECPoint& Q) const {
+        // ToDo: checke, ob inverse dann point at infinity ausgeben
         if (!point_is_on_curve(P)) {
             throw PointNotOnCurveException("Point P (" + P.x.get_str() + ", " + P.y.get_str() + ") is not on the elliptic curve.");
         }
@@ -346,9 +358,20 @@ public:
 
 };
 
-// ToDo: brauche noch Funktion, die mit gegebenen N einen sinnvollen Startwert für B und C
-mpz_class lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_class& C)
-{
+
+mpz_class get_exp_for_prime(const mpz_class& C, const mpz_class& p) {
+    // Convert C to double: there is no log and exp function in GMP library (we might lose precision at this point)
+    const double C_double = C.get_d();
+    // step 1: calculate C + 2*sqrt(C) + 1
+    const double term = C_double + 2 * sqrt(C_double) + 1;
+    // calculate log with basis p (using logarithmic laws)
+    const double e_double = log(term) / log(p.get_d());
+    mpz_class e(e_double);
+
+    return e;
+}
+
+void check_input(const mpz_class& N) {
     if (N % 2 == 0) {
         throw std::invalid_argument("N: " + N.get_str() + "is divisible by 2.");
     }
@@ -359,51 +382,94 @@ mpz_class lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_cl
         throw std::invalid_argument("N: " + N.get_str() + "is a perfect power.");
     }
 
-    mpz_class a, u, v, g;
+}
 
-    // Create, initialize, and seed a new random number generator.
+
+// ToDo: brauche noch Funktion, die mit gegebenen N einen sinnvollen Startwert für B und C
+//  evtl. Idee: lasse mir C von "außen" mitgeben und berechne von dort B (mit Formel (14) - siehe S. 566)
+mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_class& C)
+{
+    check_input(N);  // check if N satisfies prerequisites
+
+    // Random values for a,u,v
+    mpz_class a, u, v;
     gmp_randstate_t state;
     gmp_randinit_default(state); // Initialize the random state
     gmp_randseed_ui(state, std::random_device{}()); // Seed with a random value
 
-    // Random values for a,u,v
     mpz_urandomm(a.get_mpz_t(),state,N.get_mpz_t());
     mpz_urandomm(u.get_mpz_t(),state,N.get_mpz_t());
     mpz_urandomm(v.get_mpz_t(),state,N.get_mpz_t());
 
+    // Calculate b, such that P(u,v) is on E(a,b,Z/NZ)
     mpz_class const b = (((v * v) % N) - ((u * u * u) % N) - ((a * u) % N) % N); // b = (v^2 - u^3 - au) mod N
-    mpz_class discriminant = (((4 * a * a * a) % N) - ((27 * b * b) % N)) % N;
-    mpz_gcd(g.get_mpz_t(), discriminant.get_mpz_t(), N.get_mpz_t());
-    if (1 < g < N) {
-        return g;
+
+    try {
+        // Try to initialize elliptic curve
+        EllipticCurve E(a,b,N);
+        // Elliptic point initialization
+        const ECPoint P(u,v);
+        ECPoint Q(P.x, P.y);  // Q = P
+
+        // Iterate through primes up to B
+        mpz_class prime("2"); // Start with the first prime
+        while (prime <= B) {
+            mpz_class e = get_exp_for_prime(C,prime);
+            // For-loop from 0 up to e-1
+            for (mpz_class j = 0; j < e; ++j) {
+                std::cout << "Iteration j = " << j << std::endl;  //ToDo: get out
+                const ECPoint tmp = E.scalar_multiplication(prime,Q);
+                Q = tmp;
+            }
+            // Dummy statement (replace this with actual logic in the loop)
+            std::cout << "Processing prime: " << prime.get_str() << std::endl;  //ToDo: get out
+            // Get the next prime
+            mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
+        }
+        // No factor found, algorithm unsuccessful
+        throw UnsuccessfulLenstraAlgorithmException("Reached end of lenstra algorithm.");
+    } catch (const SingularEllipticCurveException& exc) {
+        if (exc.gcd > 1 && exc.gcd < N) {  // we found non-trivial divisor of N; i.e., gdc(((4 * a^3 + 27 * b^2) mod n), n)
+            return exc.gcd;
+        }
+        // Now, we know exc.gcd == N
+        throw DiscriminantMultipleOfNException("Discriminant is multiple of N: " + N.get_str());
+    } catch (const NonInvertibleElementException& exc) {  // we found an element not invertible over Z/nZ
+        return exc.gcd;
     }
-
-    if (g == N) {
-        throw DiscriminantMultipleOfN("Discriminant: " + discriminant.get_str() + "is multiple of N: " + N.get_str());
-    }
-
-    // Elliptic curve point initialization
-    ECPoint P(u,v);
-    ECPoint Q(P.x, P.y);
-    mpz_class t("1");
-
-    // Iterate through primes up to B
-    mpz_class prime("2"); // Start with the first prime
-    while (prime <= B) {
-        // evtl. mpf_class nutzen, für log Operationen?
-
-        // Dummy statement (replace this with actual logic in the loop)
-        std::cout << "Processing prime: " << prime.get_str() << std::endl;
-
-        // Get the next prime
-        mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
-    }
-
-
 }
 
 
+mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_times)
+{
+    for (int i = 0; i < m_times; ++i) {
+        try {
+            return run_lenstra_algorithm(N, B, C);
+        } catch (const DiscriminantMultipleOfNException&) {
+        } catch (const UnsuccessfulLenstraAlgorithmException&) {
+        }
+    }
 
+    // If all attempts failed, throw exception
+    throw UnsuccessfulLenstraAlgorithmException("All " + std::to_string(m_times) + " attempts of Lenstra algorithm failed.");
+}
+
+
+mpz_class calculate_prime_bound_from_smallest_prime_bound(const mpz_class& C) {
+    // Ensure C > 1 because ln(ln(C)) is undefined for C <= 1
+    if (C <= 1) {
+        throw std::invalid_argument("C must be greater than 1.");
+    }
+
+    // Convert C to double: there is no log and exp function in GMP library (we might lose precision at this point)
+    const double C_double = C.get_d();
+    // Calculate B as double
+    const double B_double = exp(sqrt((log(C_double)*log(log(C_double)))/2));
+
+    mpz_class B(B_double + 1);  // (B_double + 1) because constructor of mpz_class is flooring
+
+    return B;
+}
 
 
 /**
@@ -686,6 +752,96 @@ std::vector<mpz_class> generate_primes_sieve(const mpz_class& N) {
 }
 
 
+void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+
+    // First, make sure N is not divisible by 2 or 3 (divide out if necessary)
+    Factor factor;
+    mpz_class P("2");
+    factor.exponent = divide_out_maximal_power(N,P);
+    if(factor.exponent > 0)
+    {
+        factor.factor = P;
+        factor.is_prime = 2;
+        factors.push_back(factor);
+
+    }
+    P++; // P = 3
+    factor.exponent = divide_out_maximal_power(N,P);
+    if(factor.exponent > 0)
+    {
+        factor.factor = P;
+        factor.is_prime = 2;
+        factors.push_back(factor);
+
+    }
+
+    // Base case: stop if N is 1
+    if (N == 1)
+        return;
+
+    // Check if N is prime
+    int prime_status = mpz_probab_prime_p(N.get_mpz_t(), 27); // GMP primality test
+    if (prime_status > 0) { // N is prime or probably prime
+        Factor factor;
+        factor.exponent = 1;
+        factor.factor = N;
+        factor.is_prime = prime_status;
+        factors.push_back(factor);
+        N = mpz_class("1");
+        return;
+    }
+
+    // Check if N is a perfect power
+    if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
+        handle_perfect_power(N, factors); // Placeholder for handling perfect power case
+        return; // Stop further factorization since perfect power handling will decompose N
+    }
+
+    // ToDo: next steps:
+    //  - Logik für die perfect numbers einbauen
+    //  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
+
+    // Apply Lenstra's algorithm to find a non-trivial divisor
+    mpz_class C_tmp = C;
+    mpz_class B_tmp = calculate_prime_bound_from_smallest_prime_bound(C_tmp);
+    mpz_class divisor("1");
+    while (divisor <= 1) {
+        try {
+            divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
+        } catch (const UnsuccessfulLenstraAlgorithmException&) {
+        }
+        C_tmp = C_tmp * 2; // Double C
+        B_tmp = calculate_prime_bound_from_smallest_prime_bound(C_tmp);
+
+    }
+
+    // Check if the divisor is prime
+    prime_status = mpz_probab_prime_p(divisor.get_mpz_t(), 27);
+    if (prime_status > 0) { // Divisor is prime or probably prime
+        // Divide out the maximal power of the prime divisor
+        unsigned int exponent = divide_out_maximal_power(N, divisor);
+
+        // Add the prime factor
+        Factor factor;
+        factor.factor = divisor;
+        factor.exponent = exponent;
+        factor.is_prime = prime_status; // Definitely prime or probable prime
+        factors.push_back(factor);
+    } else {
+        // Divisor is not prime, further factorize it
+        mpz_class divisor_copy = divisor; // Create a copy to avoid modification
+        factorize_with_elliptic_curves(divisor_copy, B, C, m_curves, factors);
+
+        // Update N by dividing it by the divisor
+        N /= divisor;
+    }
+
+    // Factorize the remaining part of N
+    factorize_with_elliptic_curves(N, B, C, m_curves, factors);
+}
+
+
+
 /**
  * @brief Main function for the factorization program.
  *
@@ -707,12 +863,25 @@ int main(int argc, char *argv[]) {
     /// compare the two prime functions: geben für ein N die gleiche Anzahl an primes aus?
     /// ACHTUNG: eigentlich brauche ich für den lenstra algorithmus gar nicht alle primes direkt berechenen,
     /// sondern nach und nach ok (kann ja sein, dass bei einem direkt abschmiert..), würde für mpz_nextprime sprechen..
+
+    mpz_class C("25367772666693888345"); // Beispielwert für C
+    mpz_class p("17"); // Beispielwert für p
+
+    mpz_class e = get_exp_for_prime(C,p);
+    gmp_printf("e = %Zd\n", e.get_mpz_t());
+
+    mpz_class Bu = calculate_prime_bound_from_smallest_prime_bound(C);
+    gmp_printf("B = %Zd\n", Bu.get_mpz_t());
+
+
+
+
     std::cout  << "Input N:  " ;
     std::string number_as_string2;
     std::cin >> number_as_string2;
     mpz_class N2 = mpz_class(number_as_string2);
 
-    lenstra_algorithm(N2, N2, N2);
+    run_lenstra_algorithm(N2, N2, N2);
 
 
 
@@ -852,4 +1021,8 @@ int main(int argc, char *argv[]) {
 // Potential Improvements:
 // - Use faster way to identify all primes less or equal to bound B (e.g., sieve of Atkins), das muss aber abgeglichen
 //   werden, da wenn ich sieb verwende, dann berechne ich wirklich alle, ohne dass ich u.U. wirklich alle benötige
-// - Efficiency can be improved at several points (but often at the cost of readability)
+// - Efficiency can be improved at several points (but often at the cost of readability). U.a.:
+//      - Berechnen der Primzahlen <= B
+//      - Handling der perfect powers
+// - Könnte multiprocessing nutzen, um parallel mehrere durchläufe für Lenstra zu machen
+// Muss wenn ich durchlaufe mal Memory checken (ob der voll läuft)
