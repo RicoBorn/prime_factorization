@@ -10,6 +10,7 @@
 #include <vector>
 #include <random>
 #include <cmath>
+#include <utility>
 
 #include "testzahlen.h"
 
@@ -752,6 +753,67 @@ std::vector<mpz_class> generate_primes_sieve(const mpz_class& N) {
 }
 
 
+// return k,m, such that N=k^m (and m is maximal, meaning for all a,b, such that N = a^b, it holds m>=b)
+std::pair<mpz_class, unsigned int> get_smallest_base_biggest_exponent_for_perfect_power(const mpz_class& N) {
+    // Ensure N is greater than 1 (no meaningful decomposition for N <= 1)
+    if (N <= 1) {
+        throw std::invalid_argument("N must be greater than 1.");
+    }
+
+    // If N = k^m (for natural numbers k,m >1), than m <= floor(log2(N))
+    mpz_class k;
+    unsigned int upper_bound_exponent = floor(log2(N.get_d()));
+    for (unsigned int i = upper_bound_exponent; i >= 2; --i) {
+        // test potential exponents, starting with upper bound
+        // mpz_root returns non-zero if the computation was exact, i.e., if N is k to the i-th power.
+        if (mpz_root(k.get_mpz_t(), N.get_mpz_t(), i) > 0) {
+            // Verify the result by computing k^i and comparing with N
+            mpz_class check;
+            mpz_pow_ui(check.get_mpz_t(), k.get_mpz_t(), i);
+            if (check == N) {
+                return {k, i}; // Return the pair (k, m)
+            }
+        }
+    }
+    throw std::invalid_argument("N: " + N.get_str() + " is not a perfect power.");
+}
+
+// Function prototypes
+void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+
+
+void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+    // Decompose N into a^b (minimal a, maximal b)
+    auto [k, m] = get_smallest_base_biggest_exponent_for_perfect_power(N);
+
+    // Check if k is prime
+    int prime_status = mpz_probab_prime_p(k.get_mpz_t(), 27); // GMP primality test
+    if (prime_status > 0) { // k is prime or probably prime; add it to factors (with exponent m) and return
+        Factor factor;
+        factor.exponent = m;
+        factor.factor = k;
+        factor.is_prime = prime_status;
+        factors.push_back(factor);
+        N = mpz_class("1");
+        return;
+    }
+
+    // k is composite and must be further factorized; Info: k cannot be a perfect power itself (otherwise m would've not be maximal)
+    std::list<Factor> tmp_factors;
+    factorize_with_elliptic_curves(N, B, C, m_curves, tmp_factors);
+    // Now that k is completely factorized, update factors (by multiplying all exponents by m)
+    for (auto& factor : tmp_factors) {
+        factor.exponent *= m; // Multiply each exponent by m
+        factors.push_back(factor);    // Add the updated factor to the main list
+    }
+
+};
+
+// ToDo: next steps:
+//  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
+
+
 void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
 
     // First, make sure N is not divisible by 2 or 3 (divide out if necessary)
@@ -779,6 +841,12 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
     if (N == 1)
         return;
 
+    // Check if N is a perfect power, and handle this case
+    if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
+        handle_perfect_power(N, B, C, m_curves, factors);
+        return; // Stop further factorization since perfect power handling will decompose N
+    }
+
     // Check if N is prime
     int prime_status = mpz_probab_prime_p(N.get_mpz_t(), 27); // GMP primality test
     if (prime_status > 0) { // N is prime or probably prime
@@ -790,16 +858,6 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
         N = mpz_class("1");
         return;
     }
-
-    // Check if N is a perfect power
-    if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
-        handle_perfect_power(N, factors); // Placeholder for handling perfect power case
-        return; // Stop further factorization since perfect power handling will decompose N
-    }
-
-    // ToDo: next steps:
-    //  - Logik für die perfect numbers einbauen
-    //  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
 
     // Apply Lenstra's algorithm to find a non-trivial divisor
     mpz_class C_tmp = C;
@@ -864,14 +922,14 @@ int main(int argc, char *argv[]) {
     /// ACHTUNG: eigentlich brauche ich für den lenstra algorithmus gar nicht alle primes direkt berechenen,
     /// sondern nach und nach ok (kann ja sein, dass bei einem direkt abschmiert..), würde für mpz_nextprime sprechen..
 
-    mpz_class C("25367772666693888345"); // Beispielwert für C
-    mpz_class p("17"); // Beispielwert für p
+    //mpz_class C("25367772666693888345"); // Beispielwert für C
+    //mpz_class p("17"); // Beispielwert für p
 
-    mpz_class e = get_exp_for_prime(C,p);
-    gmp_printf("e = %Zd\n", e.get_mpz_t());
+    //mpz_class e = get_exp_for_prime(C,p);
+    //gmp_printf("e = %Zd\n", e.get_mpz_t());
 
-    mpz_class Bu = calculate_prime_bound_from_smallest_prime_bound(C);
-    gmp_printf("B = %Zd\n", Bu.get_mpz_t());
+    //mpz_class Bu = calculate_prime_bound_from_smallest_prime_bound(C);
+    //gmp_printf("B = %Zd\n", Bu.get_mpz_t());
 
 
 
@@ -880,8 +938,10 @@ int main(int argc, char *argv[]) {
     std::string number_as_string2;
     std::cin >> number_as_string2;
     mpz_class N2 = mpz_class(number_as_string2);
-
-    run_lenstra_algorithm(N2, N2, N2);
+    auto result = get_smallest_base_biggest_exponent_for_perfect_power(N2);
+    std::cout << "N = " << N2 << " can be expressed as " << result.first << "^" << result.second << std::endl;
+    return EXIT_SUCCESS;
+    //run_lenstra_algorithm(N2, N2, N2);
 
 
 
