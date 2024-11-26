@@ -1,7 +1,13 @@
-
 #ifndef FACTORIZATION_H
 #define FACTORIZATION_H
 
-const int
+#include <string> // For std::string
 
-#endif
+// Constants
+extern const std::string TRIAL_DIV_BOUND;
+extern const int NUM_ELLIPTIC_CURVES;
+
+// Function prototypes (if needed)
+void some_function(); // Example  //ToDo: get out
+
+#endif // FACTORIZATION_H

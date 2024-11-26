@@ -13,8 +13,15 @@
 #include <utility>
 
 #include "testzahlen.h"
+#include "factorization.h"
 
 /* compilation: g++ -std=c++11 factorization.cpp testzahlen.cpp -lgmp -lgmpxx */
+
+
+// Define constants
+const std::string TRIAL_DIV_BOUND = "1000000";
+const int NUM_ELLIPTIC_CURVES = 50;
+
 
 /**
  * @class SingularEllipticCurveException
@@ -360,6 +367,16 @@ public:
 };
 
 
+/**
+ * @brief Computes the exponent `e` such that `e = log_p(C + 2*sqrt(C) + 1)`.
+ *
+ * This function is part of the Lenstra algorithm. The term `C + 2*sqrt(C) + 1` arises from the Hasse Bound (1933).
+ * Since the GMP library lacks native logarithmic and exponential functions, precision may be lost when converting to and from double.
+ *
+ * @param C The input integer for which the computation is performed.
+ * @param p The prime number to compute the exponent for.
+ * @return mpz_class The exponent `e` as an arbitrary-precision integer.
+ */
 mpz_class get_exp_for_prime(const mpz_class& C, const mpz_class& p) {
     // Convert C to double: there is no log and exp function in GMP library (we might lose precision at this point)
     const double C_double = C.get_d();
@@ -372,6 +389,15 @@ mpz_class get_exp_for_prime(const mpz_class& C, const mpz_class& p) {
     return e;
 }
 
+
+/**
+ * @brief Validates the input `N` for the Lenstra elliptic curve factorization algorithm.
+ *
+ * Ensures that `N` is not divisible by 2 and 3, and that `N` is not a perfect power.
+ *
+ * @param N The number to be validated.
+ * @throw std::invalid_argument if the number is divisible by 2, 3, or is a perfect power.
+ */
 void check_input(const mpz_class& N) {
     if (N % 2 == 0) {
         throw std::invalid_argument("N: " + N.get_str() + "is divisible by 2.");
@@ -386,8 +412,22 @@ void check_input(const mpz_class& N) {
 }
 
 
-// ToDo: brauche noch Funktion, die mit gegebenen N einen sinnvollen Startwert für B und C
-//  evtl. Idee: lasse mir C von "außen" mitgeben und berechne von dort B (mit Formel (14) - siehe S. 566)
+
+/**
+ * @brief Executes Lenstra's elliptic curve factorization algorithm on the given number.
+ *
+ * This function tries to factorize `N` using an elliptic curve over the field `Z/NZ`.
+ * The algorithm iterates through primes up to `B` and applies scalar multiplication
+ * on the elliptic curve.
+ *
+ * @param N The number to be factorized.
+ * @param B The bound for the primes used in scalar multiplication.
+ * @param C The bound for the smallest prime.
+ * @return mpz_class A non-trivial divisor of `N` if found.
+ * @throw UnsuccessfulLenstraAlgorithmException if no factor is found after all primes.
+ * @throw DiscriminantMultipleOfNException if the curve discriminant is a multiple of `N`.
+ * @throw NonInvertibleElementException if a non-invertible element over `Z/NZ` is encountered. This is the `success` case.
+ */
 mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_class& C)
 {
     check_input(N);  // check if N satisfies prerequisites
@@ -441,6 +481,20 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
 }
 
 
+
+/**
+ * @brief Executes the Lenstra elliptic curve factorization algorithm multiple times.
+ *
+ * Repeats the Lenstra algorithm up to `m_times` in an attempt to find a factor.
+ * If all attempts fail, an exception is thrown.
+ *
+ * @param N The number to be factorized.
+ * @param B The bound for primes used in the algorithm.
+ * @param C The bound for the smallest prime.
+ * @param m_times Number of attempts to perform.
+ * @return mpz_class A non-trivial divisor of `N` if found.
+ * @throw UnsuccessfulLenstraAlgorithmException if all attempts fail.
+ */
 mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_times)
 {
     for (int i = 0; i < m_times; ++i) {
@@ -456,6 +510,15 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
 }
 
 
+/**
+ * @brief Computes the prime bound `B` based on the smallest prime bound parameter `C`.
+ *
+ * Uses the formula `B = exp(sqrt(log(C) * log(log(C)) / 2))` to compute an approximate prime bound.
+ *
+ * @param C The smallest prime bound parameter.
+ * @return mpz_class The calculated prime bound as an integer.
+ * @throw std::invalid_argument if `C` is less than or equal to 1.
+ */
 mpz_class calculate_prime_bound_from_smallest_prime_bound(const mpz_class& C) {
     // Ensure C > 1 because ln(ln(C)) is undefined for C <= 1
     if (C <= 1) {
@@ -581,6 +644,7 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
     // Factorize N by trial division
     // First try 2 and 3, then numbers congruent to 1 or 5 modulo 6
     mpz_class P("2");
+    if (B < P) {return factors;}
     ppt.exponent = divide_out_maximal_power(N,P);
     if(ppt.exponent > 0)
     {
@@ -590,6 +654,7 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
 
     }
     P++; // P = 3
+    if (B < P) {return factors;}
     ppt.exponent = divide_out_maximal_power(N,P);
     if(ppt.exponent > 0)
     {
@@ -696,64 +761,17 @@ mpz_class generate_get_number_from_user_input(const std::string& number_as_strin
 }
 
 
-/**
- * @brief Generates all prime numbers <= N using GMP's mpz_nextprime function.
- * @param N The upper bound (inclusive) for the range of primes, of type mpz_class.
- * @return A vector of mpz_class containing all primes <= N.
- */
-std::vector<mpz_class> generate_primes_nextprime(const mpz_class& N) {
-    std::vector<mpz_class> primes;
-
-    if (N < 2) {
-        return primes; // No primes less than 2
-    }
-
-    mpz_class current = 2; // Start from the first prime
-
-    while (current <= N) {
-        primes.push_back(current);
-        mpz_nextprime(current.get_mpz_t(), current.get_mpz_t()); // Get the next prime
-    }
-
-    return primes;
-}
-
-/**
- * @brief Generates all prime numbers <= N using the Sieve of Eratosthenes.
- * @param N The upper bound (inclusive) for the range of primes, of type mpz_class.
- * @return A vector of mpz_class containing all primes <= N.
- */
-std::vector<mpz_class> generate_primes_sieve(const mpz_class& N) {
-    if (N < 2) {
-        return {}; // No primes less than 2
-    }
-
-    long upper_bound = N.get_si(); // Convert N to long
-    std::vector<bool> is_prime(upper_bound + 1, true);
-    is_prime[0] = is_prime[1] = false; // 0 and 1 are not primes
-
-    // Sieve of Eratosthenes
-    for (long i = 2; i * i <= upper_bound; ++i) {
-        if (is_prime[i]) {
-            for (long j = i * i; j <= upper_bound; j += i) {
-                is_prime[j] = false;
-            }
-        }
-    }
-
-    // Collect primes
-    std::vector<mpz_class> primes;
-    for (long i = 2; i <= upper_bound; ++i) {
-        if (is_prime[i]) {
-            primes.push_back(mpz_class(i));
-        }
-    }
-
-    return primes;
-}
-
-
 // return k,m, such that N=k^m (and m is maximal, meaning for all a,b, such that N = a^b, it holds m>=b)
+/**
+ * @brief Decomposes a number into a base and exponent if it is a perfect power.
+ *
+ * Determines the smallest base `k` and largest exponent `m` such that `N = k^m`.
+ * That is, for all other bases (a > 1) and exponents (b > 1), such that `N = a^b`, it holds `m >= b`.
+ *
+ * @param N The number to decompose.
+ * @return std::pair<mpz_class, unsigned int> A pair containing the base `k` and exponent `m`.
+ * @throw std::invalid_argument if `N` is not a perfect power.
+ */
 std::pair<mpz_class, unsigned int> get_smallest_base_biggest_exponent_for_perfect_power(const mpz_class& N) {
     // Ensure N is greater than 1 (no meaningful decomposition for N <= 1)
     if (N <= 1) {
@@ -779,7 +797,32 @@ std::pair<mpz_class, unsigned int> get_smallest_base_biggest_exponent_for_perfec
 }
 
 // Function prototypes
+/**
+ * @brief Handles the factorization of a perfect power by decomposing it into its base and exponent.
+ *
+ * This function performs recursive factorization on the base and updates the list of factors.
+ *
+ * @param N The perfect power to factorize.
+ * @param B The prime bound for elliptic curve factorization.
+ * @param C Parameter controlling the randomness of curves.
+ * @param m_curves Number of elliptic curves to use for factorization.
+ * @param factors The list of factors to be updated with results.
+ */
 void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+
+
+/**
+ * @brief Factorizes a number using elliptic curve factorization.
+ *
+ * Combines perfect power decomposition, and Lenstra's elliptic curve algorithm
+ * to fully factorize `N` into its prime factors.
+ *
+ * @param N The number to factorize (modified during computation).
+ * @param B The prime bound for elliptic curve factorization.
+ * @param C Parameter controlling the randomness of curves.
+ * @param m_curves Number of elliptic curves to use for factorization.
+ * @param factors The list of factors to be updated with results.
+ */
 void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
 
 
@@ -809,9 +852,6 @@ void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, c
     }
 
 };
-
-// ToDo: next steps:
-//  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
 
 
 void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
@@ -916,66 +956,6 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
  * @return int Program exit status.
  */
 int main(int argc, char *argv[]) {
-    /// Start Testing ////
-    ///
-    /// compare the two prime functions: geben für ein N die gleiche Anzahl an primes aus?
-    /// ACHTUNG: eigentlich brauche ich für den lenstra algorithmus gar nicht alle primes direkt berechenen,
-    /// sondern nach und nach ok (kann ja sein, dass bei einem direkt abschmiert..), würde für mpz_nextprime sprechen..
-
-    //mpz_class C("25367772666693888345"); // Beispielwert für C
-    //mpz_class p("17"); // Beispielwert für p
-
-    //mpz_class e = get_exp_for_prime(C,p);
-    //gmp_printf("e = %Zd\n", e.get_mpz_t());
-
-    //mpz_class Bu = calculate_prime_bound_from_smallest_prime_bound(C);
-    //gmp_printf("B = %Zd\n", Bu.get_mpz_t());
-
-
-
-
-    std::cout  << "Input N:  " ;
-    std::string number_as_string2;
-    std::cin >> number_as_string2;
-    mpz_class N2 = mpz_class(number_as_string2);
-    auto result = get_smallest_base_biggest_exponent_for_perfect_power(N2);
-    std::cout << "N = " << N2 << " can be expressed as " << result.first << "^" << result.second << std::endl;
-    return EXIT_SUCCESS;
-    //run_lenstra_algorithm(N2, N2, N2);
-
-
-
-
-
-    std::vector<mpz_class> z,y;
-
-    // Zeitmessung starten---------
-    std::chrono::time_point<std::chrono::high_resolution_clock> start = std::chrono::high_resolution_clock::now();
-    z = generate_primes_sieve(N2);
-    //Zeitmessung stoppen----------
-    std::chrono::time_point<std::chrono::high_resolution_clock>
-    end = std::chrono::high_resolution_clock::now();
-    //Vergangene Zeitspanne bestimmen und ausgeben
-    std::chrono::duration<double, std::milli> float_ms = end - start;
-    std::cout << "Berechnung in " << float_ms.count() << " Millisekunden abgeschlossen" << std::endl;
-    std::cout << "Number of primes " << z.size() << std::endl;
-
-    // Zeitmessung starten---------
-    std::chrono::time_point<std::chrono::high_resolution_clock> start2 = std::chrono::high_resolution_clock::now();
-    y = generate_primes_nextprime(N2);
-    //Zeitmessung stoppen----------
-    std::chrono::time_point<std::chrono::high_resolution_clock>
-    end2 = std::chrono::high_resolution_clock::now();
-    //Vergangene Zeitspanne bestimmen und ausgeben
-    std::chrono::duration<double, std::milli> float_ms2 = end2 - start2;
-    std::cout << "Berechnung in " << float_ms2.count() << " Millisekunden abgeschlossen" << std::endl;
-    std::cout << "Number of primes " << y.size() << std::endl;
-
-    /////// End Testing ///
-    ///
-    ///
-    ///
-    ///
     NumberMode mode = DirectNumber;
     std::string question("natural number k");
 
@@ -1034,50 +1014,36 @@ int main(int argc, char *argv[]) {
     }
     std::cout << "Valid input received. The program will attempt to factor: " << N << std::endl;
 
+    // Start timing ---------
+    std::chrono::time_point<std::chrono::high_resolution_clock> start = std::chrono::high_resolution_clock::now();
 
-    // Factorize up to the limit (trial division up to 10^8, adjustable if necessary)
-    mpz_class B("100000000");  // via Variable aus Header file mitgeben
-    std::list<Factor> factors = trial_division_bounded(N,B);
+    // Factorize up to a limit (trial division up to 10^8, adjustable if necessary)
+    mpz_class trial_division_bound(TRIAL_DIV_BOUND);  // ToDo: via Variable aus Header file mitgeben
+    std::list<Factor> factors = trial_division_bounded(N,trial_division_bound);
+    // Use elliptic curves factorization for remainder
+    factorize_with_elliptic_curves(N, B, C, NUM_ELLIPTIC_CURVES, factors);
 
-    std::cout << "Found the following prime factors:" << std::endl;
-    for (std::list<Factor>::iterator it = factors.begin(); it != factors.end(); it++)
-        it->printpp();
-
-    std::cout << "Remainder of N: " << N << std::endl;
-    // Now use elliptic curve algorithm for remainder
-
-    // TEEEEEEEEEEEST
-    std::string a_as_string;
-    std::string b_as_string;
-    std::string n_as_string;
-
-    std::cout << "a: " << std::endl;
-    std::cin >> a_as_string;
-    mpz_class a = mpz_class(a_as_string);
-
-    std::cout << "b: "<< std::endl;
-    std::cin >> b_as_string;
-    mpz_class b = mpz_class(b_as_string);
-
-    std::cout << "n: " << std::endl;
-    std::cin >> n_as_string;
-    mpz_class n = mpz_class(n_as_string);
-
-    std::cout << "Try to instantiate elliptic curve" << std::endl;
-    EllipticCurve x = EllipticCurve(a,b,n);
-    std::cout << "Done!" << std::endl;
-
-    mpz_class denominator("2");
-    mpz_class num("5");
-    int output;
-    output = mpz_invert(denominator.get_mpz_t(), denominator.get_mpz_t(), num.get_mpz_t());
-    std::cout << "denominator: " << denominator << std::endl;
-    std::cout << "output: " << output << std::endl;
-
+    // Stop timing ----------
+    std::chrono::time_point<std::chrono::high_resolution_clock> end = std::chrono::high_resolution_clock::now();
+    // Calculate elapsed time and print it
+    std::chrono::duration<double, std::milli> float_ms = end - start;
+    std::cout << "Factorization in " << float_ms.count() << " milliseconds completed" << std::endl;
+    
     return EXIT_SUCCESS; // Program completed successfully
 }
 
+// Getestete Funktionen:
+// - get_smallest_base_biggest_exponent_for_perfect_power
+// - calculate_prime_bound_from_smallest_prime_bound
+
+
+// ToDo: brauche noch Funktion, die mit gegebenen N einen sinnvollen Startwert für B und C
+//  evtl. Idee: lasse mir C von "außen" mitgeben und berechne von dort B (mit Formel (14) - siehe S. 566)
 // ToDo: dann alles testen was elliptic Curve class angeht!
+// ToDo: next steps:
+//  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
+
+
 // Potential Improvements:
 // - Use faster way to identify all primes less or equal to bound B (e.g., sieve of Atkins), das muss aber abgeglichen
 //   werden, da wenn ich sieb verwende, dann berechne ich wirklich alle, ohne dass ich u.U. wirklich alle benötige
