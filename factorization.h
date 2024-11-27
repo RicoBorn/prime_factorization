@@ -5,7 +5,7 @@
 
 // Constants
 extern const std::string TRIAL_DIV_BOUND;
-extern const int NUM_ELLIPTIC_CURVES;
+extern const int DEFAULT_NUM_CURVES;
 
 // Function prototypes (if needed)
 void some_function(); // Example  //ToDo: get out
