@@ -19,10 +19,10 @@
 
 
 // Define constants
-const std::string TRIAL_DIV_BOUND = "1000000";
-const int DEFAULT_NUM_CURVES = 100;
-const int DEFAULT_B = 0;  // stage1-bound: if set to 0, it will be calculated at run time (as a function of C)
-const int DEFAULT_C = 0;  // stage2-bound: if set to 0, it will be calculated at run time (as a function of N)
+const std::string TRIAL_DIV_BOUND = "100000000";
+const int DEFAULT_NUM_CURVES = 50;  // Number of elliptic curves to try before increasing bounds
+const int DEFAULT_B = 0;  // stage-1 bound: if set to 0, it will be calculated at run time (as a function of C)
+const int DEFAULT_C = 0;  // stage-2 bound: if set to 0, it will be calculated at run time (as a function of N)
 const bool DEFAULT_NO_TRIAL_DIVISION = false;
 
 
@@ -119,6 +119,60 @@ public:
 
 
 /**
+ * @brief Calculates the number of decimal digits in a given integer.
+ *
+ * This function determines the total number of decimal (base-10) digits in the
+ * absolute value of the input integer `N`. Special case: if `N` is 0, the
+ * function correctly returns 1, as 0 has one decimal digit.
+ *
+ * @param N An integer of type `mpz_class` whose decimal digit count is to be determined.
+ * @return size_t The number of decimal digits in the absolute value of `N`.
+ */
+size_t get_number_of_decimal_digits(const mpz_class& N) {
+    if (N == 0) {
+        return 1; // Special case: 0 has 1 decimal digit
+    }
+    return mpz_sizeinbase(N.get_mpz_t(), 10);
+}
+
+
+/**
+ * @brief Calculates stage-2 bound (bound for smallest prime) from N.
+ *
+ * This function calculates the stage-2 bound as follows:
+ *   - If: N is known to be RSA-Number there is not value of setting the bound for smallest prime to much less than sqrt(N)
+ *     we calculate bound = floor(sqrt(N))/1000
+ *   - If: N is a small number (i.e., up to 20 (decimal) digits), we simply calculate bound = floor(sqrt(N))
+ *   - Else: it follows: https://www.maplesoft.com/applications/Preview.aspx?id=3528 and calculates bound = floor(log2(N))
+ *
+ * @param N The (composite) number.
+ * @param is_rsa_number Boolean flag whether number is known to be an RSA-Number.
+ * @return mpz_class The stage-2 bound.
+ */
+mpz_class get_smallest_prime_bound(mpz_class& N, const bool is_rsa_number) {
+    //ToDo: mit meinem Programm "rumspielen" ich muss sehen, wie lange es dauert, bei verschiedenen C Werten und dass hier mit aufnehmen
+    //ToDo: evtl. noch "known lower bound" mit einbinden... (kennen ja durch trial division schon,dass kein kleiner Teiler mehr von N existiert...)
+
+    mpz_class sqrt_N;
+
+    if (is_rsa_number) {
+        mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
+        return sqrt_N / 100;
+    }
+
+    if (get_number_of_decimal_digits(N) < 20) {
+        mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
+        return sqrt_N;
+
+    }
+    const size_t msb = mpz_sizeinbase(N.get_mpz_t(), 2);
+    mpz_class bound = msb - 1;
+
+    return bound;
+}
+
+
+/**
  * @class ECPoint
  * @brief Represents a point on an elliptic curve over ring Z/nZ.
  *
@@ -196,10 +250,11 @@ public:
             return true;
         }
 
-        // Calculate y^2 - (x^3 + ax + b) mod n
-        mpz_class equation = ((point.y % n) * (point.y % n)) % n;
-        equation -= ((((point.x % n) * (point.x % n)) % n) * (point.x % n)) % n; // x^3 mod n
-        equation = (equation - (((a % n) * (point.x % n)) % n - (b % n))) % n;   // y^2 - (x^3 + ax + b) mod n
+        // Calculate (y^2 - (x^3 + ax + b)) mod n
+        mpz_class equation = (point.y * point.y) % n;
+        equation -= (point.x * point.x * point.x) % n; // x^3 mod n
+        equation = (equation - (a * point.x) - b) % n;   // (y^2 - (x^3 + ax + b)) mod n
+        if (equation < 0) {equation += n;}  // in case equation is negative
 
         // Check if the equation is zero modulo n
         return equation % n == 0;
@@ -446,7 +501,8 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
     mpz_urandomm(v.get_mpz_t(),state,N.get_mpz_t());
 
     // Calculate b, such that P(u,v) is on E(a,b,Z/NZ)
-    mpz_class const b = (((v * v) % N) - ((u * u * u) % N) - ((a * u) % N) % N); // b = (v^2 - u^3 - au) mod N
+    mpz_class b = (((v * v) % N) - ((u * u * u) % N) - ((a * u) % N) % N) % N; // b = (v^2 - u^3 - au) mod N
+    if (b < 0) {b += N;}  // in case b is negative
 
     try {
         // Try to initialize elliptic curve
@@ -514,18 +570,16 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
 
 
 /**
- * @brief Computes the prime bound `B` based on the smallest prime bound parameter `C`.
+ * @brief Computes the stage-1 bound (i.e., prime base bound) `B` from the stage-2 bound (i.e., the smallest prime bound `C`).
  *
  * Uses the formula `B = exp(sqrt(log(C) * log(log(C)) / 2))` to compute an approximate prime bound.
  *
  * @param C The smallest prime bound parameter.
  * @return mpz_class The calculated prime bound as an integer.
- * @throw std::invalid_argument if `C` is less than or equal to 1.
  */
-mpz_class calculate_prime_bound_from_smallest_prime_bound(const mpz_class& C) {
-    // Ensure C > 1 because ln(ln(C)) is undefined for C <= 1
-    if (C <= 1) {
-        throw std::invalid_argument("C must be greater than 1.");
+mpz_class calculate_base_prime_bound_from_smallest_prime_bound(const mpz_class& C) {
+    if (C <= 3) {  // for C < e, ln(ln(C)) not defined
+        return C;  // simply return C for those edge cases
     }
 
     // Convert C to double: there is no log and exp function in GMP library (we might lose precision at this point)
@@ -592,21 +646,21 @@ public:
 };
 
 /**
- * @brief Divides out the maximum power of a (prime) number P from T.
+ * @brief Divides out the maximum power of a number P from T. The latter will be updated by the function.
  *
- * Takes a number T and a (prime) number P, returning the maximum exponent `e`
+ * Takes a number T and a number P, returning the maximum exponent `e`
  * such that P^e divides T. After calling this function, T is updated to T / P^e.
  *
- * @param t The number to be divided (will be modified).
+ * @param T The number to be divided (will be modified).
  * @param P The prime number divisor.
  * @return unsigned int The maximum exponent `e` such that P^e divides T.
  */
-unsigned int divide_out_maximal_power(mpz_class& t, mpz_class P)
+unsigned int divide_out_maximal_power(mpz_class& T, const mpz_class& P)
 {
     unsigned int exponent = 0;
-    while(t % P == 0)
+    while(T % P == 0)
     {
-        t = t / P;
+        T = T / P;
         exponent++;
     }
     return exponent;
@@ -626,15 +680,15 @@ unsigned int divide_out_maximal_power(mpz_class& t, mpz_class P)
  * @return std::list<Factor> A list of found factors with their exponents.
  */
 std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
-    mpz_class C = sqrt(N)+1;
+    const mpz_class C = sqrt(N) + 1;
     if (B > C) B = C;
 
     std::list<Factor> factors;
     Factor ppt;
 
-    // Check if N is prime (27 tests: 1 Baillie-PSW and 2 Rabin-Miller tests)
+    // Check if N is prime (27 tests)
     int a = mpz_probab_prime_p(N.get_mpz_t(), 27);
-    if( a > 0) // N is probably prime
+    if ( a > 0) // N is probably prime
     {
         ppt.exponent = 1;
         ppt.factor = N;
@@ -649,7 +703,7 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
     mpz_class P("2");
     if (B < P) {return factors;}
     ppt.exponent = divide_out_maximal_power(N,P);
-    if(ppt.exponent > 0)
+    if (ppt.exponent > 0)
     {
         ppt.factor = P;
         ppt.is_prime = 2;
@@ -659,7 +713,7 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
     P++; // P = 3
     if (B < P) {return factors;}
     ppt.exponent = divide_out_maximal_power(N,P);
-    if(ppt.exponent > 0)
+    if (ppt.exponent > 0)
     {
         ppt.factor = P;
         ppt.is_prime = 2;
@@ -668,10 +722,10 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
     }
 
     P+=3; // P = 6
-    while(N > 1 and P <= B )
+    while (N > 1 and P <= B )
     {
         ppt.exponent = divide_out_maximal_power(N,P-1);
-        if(ppt.exponent > 0)
+        if (ppt.exponent > 0)
         {
             ppt.factor = P-1;
             ppt.is_prime = 2;
@@ -679,7 +733,7 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
 
         }
         ppt.exponent = divide_out_maximal_power(N,P+1);
-        if(ppt.exponent > 0)
+        if (ppt.exponent > 0)
         {
             ppt.factor = P+1;
             ppt.is_prime = 2;
@@ -688,10 +742,10 @@ std::list<Factor> trial_division_bounded(mpz_class& N, mpz_class B) {
         P += 6;
     }
 
-    if( N > 1)
+    if (N > 1)
     {
         a = mpz_probab_prime_p(N.get_mpz_t(), 27);
-        if( a > 0) // Remaining number is probably prime
+        if (a > 0) // Remaining number is probably prime
         {
             ppt.exponent = 1;
             ppt.factor = N;
@@ -745,14 +799,14 @@ enum NumberMode : int {
 /**
  * @brief Generates numbers for factorization based on user input and mode.
  *
- * Converts a user-provided input (string and mode) into a number to be factorized.
+ * Converts a user-provided input (string and mode) into a number to be factored.
  * Function implementations are in `testzahlen.h` and `testzahlen.cpp`.
  *
  * @param number_as_string The number provided by the user.
  * @param number_mode Mode to interpret the input number.
  * @return mpz_class The generated number.
  */
-mpz_class generate_get_number_from_user_input(const std::string& number_as_string, const NumberMode number_mode) {
+mpz_class generate_number_from_user_input(const std::string& number_as_string, const NumberMode number_mode) {
     switch (number_mode) {
         case DirectNumber: return mpz_class(number_as_string);
         case FermatNumber: return Fermat(std::stoi(number_as_string));
@@ -764,7 +818,6 @@ mpz_class generate_get_number_from_user_input(const std::string& number_as_strin
 }
 
 
-// return k,m, such that N=k^m (and m is maximal, meaning for all a,b, such that N = a^b, it holds m>=b)
 /**
  * @brief Decomposes a number into a base and exponent if it is a perfect power.
  *
@@ -781,11 +834,10 @@ std::pair<mpz_class, unsigned int> get_smallest_base_biggest_exponent_for_perfec
         throw std::invalid_argument("N must be greater than 1.");
     }
 
-    // If N = k^m (for natural numbers k,m >1), than m <= floor(log2(N))
+    // If N = k^m (for natural numbers k,m >1), than m <= ceil(log2(N))
     mpz_class k;
-    unsigned int upper_bound_exponent = floor(log2(N.get_d()));
-    for (unsigned int i = upper_bound_exponent; i >= 2; --i) {
-        // test potential exponents, starting with upper bound
+    const unsigned int upper_bound_exponent = ceil(log2(N.get_d()));
+    for (unsigned int i = upper_bound_exponent; i >= 2; --i) {  // test potential exponents, starting with upper bound
         // mpz_root returns non-zero if the computation was exact, i.e., if N is k to the i-th power.
         if (mpz_root(k.get_mpz_t(), N.get_mpz_t(), i) > 0) {
             // Verify the result by computing k^i and comparing with N
@@ -834,7 +886,7 @@ void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, c
     auto [k, m] = get_smallest_base_biggest_exponent_for_perfect_power(N);
 
     // Check if k is prime
-    int prime_status = mpz_probab_prime_p(k.get_mpz_t(), 27); // GMP primality test
+    const int prime_status = mpz_probab_prime_p(k.get_mpz_t(), 27); // GMP primality test
     if (prime_status > 0) { // k is prime or probably prime; add it to factors (with exponent m) and return
         Factor factor;
         factor.exponent = m;
@@ -845,21 +897,20 @@ void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, c
         return;
     }
 
-    // k is composite and must be further factorized; Info: k cannot be a perfect power itself (otherwise m would've not be maximal)
+    // k is composite, factorize further; Info: k cannot be a perfect power itself (otherwise m would've not been maximal)
     std::list<Factor> tmp_factors;
-    factorize_with_elliptic_curves(N, B, C, m_curves, tmp_factors);
-    // Now that k is completely factorized, update factors (by multiplying all exponents by m)
+    factorize_with_elliptic_curves(k, B, C, m_curves, tmp_factors);
+    // Now that k is completely factorized, update prime factors (by multiplying all exponents by m)
     for (auto& factor : tmp_factors) {
-        factor.exponent *= m; // Multiply each exponent by m
-        factors.push_back(factor);    // Add the updated factor to the main list
+        factor.exponent *= m;  // Multiply each exponent by m
+        factors.push_back(factor);  // Add the updated factor to the main list
     }
 
 };
 
 
 void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
-
-    // First, make sure N is not divisible by 2 or 3 (divide out if necessary)
+    // First, ensure N is not divisible by 2 or 3 (divide out if necessary)
     Factor factor;
     mpz_class P("2");
     factor.exponent = divide_out_maximal_power(N,P);
@@ -884,16 +935,9 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
     if (N == 1)
         return;
 
-    // Check if N is a perfect power, and handle this case
-    if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
-        handle_perfect_power(N, B, C, m_curves, factors);
-        return; // Stop further factorization since perfect power handling will decompose N
-    }
-
-    // Check if N is prime
+    // Check if N is prime and stop
     int prime_status = mpz_probab_prime_p(N.get_mpz_t(), 27); // GMP primality test
     if (prime_status > 0) { // N is prime or probably prime
-        Factor factor;
         factor.exponent = 1;
         factor.factor = N;
         factor.is_prime = prime_status;
@@ -902,17 +946,23 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
         return;
     }
 
+    // Check if N is a perfect power, and handle this case
+    if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
+        handle_perfect_power(N, B, C, m_curves, factors);
+        return; // Stop further factorization since perfect power handling will decompose N
+    }
+
     // Apply Lenstra's algorithm to find a non-trivial divisor
     mpz_class C_tmp = C;
-    mpz_class B_tmp = calculate_prime_bound_from_smallest_prime_bound(C_tmp);
+    mpz_class B_tmp = B;
     mpz_class divisor("1");
     while (divisor <= 1) {
         try {
             divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
         } catch (const UnsuccessfulLenstraAlgorithmException&) {
         }
-        C_tmp = C_tmp * 2; // Double C
-        B_tmp = calculate_prime_bound_from_smallest_prime_bound(C_tmp);
+        C_tmp = C_tmp * 2; // Increase (i.e, double) C
+        B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
 
     }
 
@@ -931,14 +981,14 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
     } else {
         // Divisor is not prime, further factorize it
         mpz_class divisor_copy = divisor; // Create a copy to avoid modification
-        factorize_with_elliptic_curves(divisor_copy, B, C, m_curves, factors);
+        factorize_with_elliptic_curves(divisor_copy, B_tmp, C_tmp, m_curves, factors);  //ToDo: teste mal hier ob mit B und C (statt B_tmp, C_tmp)
 
         // Update N by dividing it by the divisor
         N /= divisor;
     }
 
     // Factorize the remaining part of N
-    factorize_with_elliptic_curves(N, B, C, m_curves, factors);
+    factorize_with_elliptic_curves(N, B_tmp, C_tmp, m_curves, factors);
 }
 
 
@@ -957,19 +1007,19 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
  * 1. `--num_mode` or `-m` (string, optional):
  *    - Specifies the type of number to be factored.
  *    - Supported values:
- *      - `Fermat`: Factors a Fermat number, F_k = 2^(2^k) + 1.
+ *      - `Fermat`: Factors a Fermat number, F_k.
  *      - `Cunningham`: Factors a Cunningham number, C_k.
  *      - `Test`: Factors a custom test number, B_k.
  *      - `RSA`: Factors an RSA challenge number, R_k.
  *    - If not provided, the program defaults to "DirectNumber" mode, that is,
- *      the user will be prompted to directly input the number to be factorized
+ *      the user will be prompted to directly input the number to be factored.
  *
  * 2. `--stage1_bound` or `-b` (positive integer, optional):
- *    - Specifies the stage 1 bound (B), that is, the bound for prime bases, for elliptic curve factorization.
+ *    - Specifies the stage-1 bound (B), that is, the bound for prime bases, for elliptic curve factorization.
  *    - Defaults to `DEFAULT_B`.
  *
  * 3. `--stage2_bound` or `-c` (positive integer, optional):
- *    - Specifies the stage 2 bound (C), that is, the bound for the smallest prime factor of N, for elliptic curve factorization.
+ *    - Specifies the stage-2 bound (C), that is, the bound for the smallest prime factor of N, for elliptic curve factorization.
  *    - Defaults to `DEFAULT_C`.
  *
  * 4. `--num_curves` or `-n` (positive integer, optional):
@@ -998,8 +1048,8 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
  *    - If trial division is enabled, attempt to factorize the number using trial division up
  *      to a predefined bound (`TRIAL_DIV_BOUND`).
  *    - Use elliptic curve factorization for the remaining composite number, based on the
- *      stage 1 and stage 2 bounds and the specified number of curves.
- * 6. Print the elapsed time for the factorization process.
+ *      stage-1 and stage-2 bounds and the specified number of curves.
+ * 6. Print the elapsed time for the factorization process as well as the prime factors.
  *
  * @param argc Number of command-line arguments.
  * @param argv Array of command-line arguments.
@@ -1008,8 +1058,8 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
 int main(int argc, char *argv[]) {
     // Argument defaults
     std::string mode_param;
-    int B = DEFAULT_B;
-    int C = DEFAULT_C;
+    mpz_class B = DEFAULT_B;
+    mpz_class C = DEFAULT_C;
     int num_curves = DEFAULT_NUM_CURVES;
     bool no_trial_division = DEFAULT_NO_TRIAL_DIVISION;
 
@@ -1017,7 +1067,7 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--num_mode" || arg == "-m") {
-            if (i + 1 < argc) mode_param = argv[++i];
+            if (i + 1 < argc) mode_param = argv[++i];  // assign mode_param and increment i
             else {
                 std::cerr << "Error: --num_mode/-m requires a value." << std::endl;
                 return EXIT_FAILURE;
@@ -1083,35 +1133,58 @@ int main(int argc, char *argv[]) {
     // Generate the number to be factored based on user input
     mpz_class N;
     try {
-        N = generate_get_number_from_user_input(number_as_string, mode);
+        N = generate_number_from_user_input(number_as_string, mode);
     } catch (const UnknownNumberModeException& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
-    std::cout << "Valid input received. The program will attempt to factor: " << N << std::endl;
+    if (N <= 1) {
+        std::cerr << "Error: Please provide an integer > 1." << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::cout << "Valid input received. The program will attempt to factor: " << N.get_str() << std::endl;
+    std::list<Factor> factors;
 
     // Start timing ---------
     std::chrono::time_point<std::chrono::high_resolution_clock> start = std::chrono::high_resolution_clock::now();
 
     // Trial division
-    std::list<Factor> factors;
     if (not no_trial_division) {  // trial division enabled
         mpz_class trial_division_bound(TRIAL_DIV_BOUND);
         factors = trial_division_bounded(N,trial_division_bound);
     }
 
-    // Use elliptic curves factorization for remainder
-    // ToDo: Funktionen schreiben: 1) get_C_from_N (das C als Funktion von N berechnet - siehe Maple)
-    // ToDo: dann diesen Wert nutzen, um damit B zu berechnen (diese Funktion gibt es schon).
-    // ToDo: diese Funktionen (falls B und C nicht mitgebenen wurden; d.h. 0 sind) hier anwenden und weitergeben...
-    //  Funktionen auch innerhalb des algorithmus für elliptische Kurven nutzen!
-    factorize_with_elliptic_curves(N, B, C, DEFAULT_NUM_CURVES, factors);
+    // Generate starting values for B (stage-1 bound) and C (stage-2 bound) for elliptic curve factorization
+    mpz_class sqrt_N;
+    mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
+    if (C == DEFAULT_C || C > (sqrt_N + 1)) {  // None or unreasonable value for C provided by user
+        C = get_smallest_prime_bound(N, mode==RSANumber);
+    }
+    if (B == DEFAULT_B) {
+        B = calculate_base_prime_bound_from_smallest_prime_bound(C);
+    }
+
+    //ToDo: Take out
+    //////////////////// TEST ///////////////
+    std::cout << "N: " << N << std::endl;
+    std::cout << "C: " << C << std::endl;
+    std::cout << "B: " << B << std::endl;
+    std::cout << "num_curves: " << num_curves << std::endl;
+    std::cout << "no_trial_division: " << no_trial_division << std::endl;
+    //////////////////// TEST ///////////////
+
+    factorize_with_elliptic_curves(N, B, C, num_curves, factors);
 
     // Stop timing ----------
     std::chrono::time_point<std::chrono::high_resolution_clock> end = std::chrono::high_resolution_clock::now();
     // Calculate elapsed time and print it
     std::chrono::duration<double, std::milli> float_ms = end - start;
     std::cout << "Factorization in " << float_ms.count() << " milliseconds completed" << std::endl;
+
+    std::cout << "Found Factorization:\n";
+    std::list<Factor>::iterator it;
+    for (it = factors.begin(); it != factors.end(); it++)
+        it->printpp();
     
     return EXIT_SUCCESS; // Program completed successfully
 }
@@ -1131,6 +1204,14 @@ int main(int argc, char *argv[]) {
 //  - Testen aller einzelnen funktionen
 //  - Testen des Gesamtkonstruktes
 //  - Faktorisieren der Testzahlen
+// Use elliptic curves factorization for remainder
+// ToDo: Funktionen schreiben: 1) get_C_from_N (das C als Funktion von N berechnet - siehe Maple)
+// ToDo: dann diesen Wert nutzen, um damit B zu berechnen (diese Funktion gibt es schon).
+// ToDo: diese Funktionen (falls B und C nicht mitgebenen wurden; d.h. 0 sind) hier anwenden und weitergeben...
+//  Funktionen auch innerhalb des algorithmus für elliptische Kurven nutzen!
+//  siehe auch was Prof. Kionke geschrieben hat (in Email)
+
+
 
 // Info: wie maple B und C berechnet: https://www.maplesoft.com/applications/Preview.aspx?id=3528
 //  - if nargs = 2 then B := boundB; else B := 2*length(n); fi;
