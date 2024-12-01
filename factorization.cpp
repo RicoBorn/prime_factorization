@@ -119,6 +119,26 @@ public:
 
 
 /**
+ * @brief Computes the representation of d as an element in the ring Z/nZ.
+ *
+ * @param d The integer to be reduced modulo n.
+ * @param n The modulus of the ring Z/nZ. Must be greater than 0.
+ * @return The canonical representative of d in Z/nZ, satisfying 0 <= result < n.
+ * @throws std::invalid_argument if n < 1.
+ */
+mpz_class mod_ring(const mpz_class& d, const mpz_class& n) {
+    if (n < 1) {
+        throw std::invalid_argument("Modulus n must be greater than 0.");
+    }
+    mpz_class result = d % n;
+    if (result < 0) {
+        result += n;
+    }
+    return result;
+}
+
+
+/**
  * @brief Calculates the number of decimal digits in a given integer.
  *
  * This function determines the total number of decimal (base-10) digits in the
@@ -189,6 +209,15 @@ public:
 public:
     ECPoint(const mpz_class& x, const mpz_class& y) : x(x), y(y), is_infinity(false) {}
     ECPoint() : is_infinity(true) {}
+
+    // to_string method
+    std::string to_string() const {
+        if (is_infinity) {
+            return "At Infinity";
+        } else {
+            return "(" + x.get_str() + ", " + y.get_str() + ")";
+        }
+    }
 };
 
 
@@ -210,18 +239,17 @@ private:
 public:
     /**
      * @brief Constructs a new elliptic curve with specified coefficients and modulus.
-     * @param a The coefficient 'a' in the elliptic curve equation.
+     * @param a The coefficient 'a' in the elliptic curve equation (i.e., the short Weierstrass-Equation).
      * @param b The coefficient 'b' in the elliptic curve equation.
      * @param n The modulus defining the ring Z/nZ over which the curve is defined.
      * @throws SingularEllipticCurveException if the curve is singular (discriminant is not invertible).
      *
      * This constructor initializes an elliptic curve using the given parameters, and verifies
-     * that the discriminant (4 * a^3 + 27 * b^2) mod n is invertible in Z/nZ. The discriminant
-     * is computed with modular reduction at each step to avoid overflow in intermediate values.
+     * that the discriminant (4 * a^3 + 27 * b^2) mod n is invertible in Z/nZ.
      */
-    EllipticCurve(const mpz_class& a, const mpz_class& b, const mpz_class& n) : a(a), b(b), n(n) {
+    EllipticCurve(const mpz_class& a, const mpz_class& b, const mpz_class& n): a(a), b(b), n(n) {
         // Calculate discriminant with modular reduction for intermediate results (to prevent growth of values)
-        mpz_class discriminant = (((4 * a * a * a) % n) + ((27 * b * b) % n)) % n;  // (4 * a^3 + 27 * b^2) mod n
+        mpz_class discriminant = mod_ring(((4 * a * a * a) % n) + ((27 * b * b) % n), n);  // (4 * a^3 + 27 * b^2) mod n
 
         // Check if discriminant is invertible in Z/nZ
         mpz_class gcd_result;
@@ -235,6 +263,11 @@ public:
     const mpz_class& get_a() const { return a; }
     const mpz_class& get_b() const { return b; }
     const mpz_class& get_modulus() const { return n; }
+
+    // to_string method
+    std::string to_string() const {
+        return "E(" + a.get_str() + "," + b.get_str() + ",Z/" + n.get_str() + "Z)";
+    }
 
     /**
      * @brief Checks if a given point is on the elliptic curve.
@@ -251,13 +284,12 @@ public:
         }
 
         // Calculate (y^2 - (x^3 + ax + b)) mod n
-        mpz_class equation = (point.y * point.y) % n;
-        equation -= (point.x * point.x * point.x) % n; // x^3 mod n
-        equation = (equation - (a * point.x) - b) % n;   // (y^2 - (x^3 + ax + b)) mod n
-        if (equation < 0) {equation += n;}  // in case equation is negative
+        mpz_class equation = (point.y * point.y) % n;  // y^3 mod n
+        equation -= (point.x * point.x * point.x) % n; // - x^3 mod n
+        equation = mod_ring(equation - ((a * point.x) % n) - b, n);   // (y^2 - (x^3 + ax + b)) mod n
 
         // Check if the equation is zero modulo n
-        return equation % n == 0;
+        return equation == 0;
     }
 
     /**
@@ -282,7 +314,7 @@ public:
         }
 
         // Compare x and y coordinates modulo n
-        return (P.x % n == Q.x % n) && (P.y % n == Q.y % n);
+        return (mod_ring(P.x, n) == mod_ring(Q.x,n)) && (mod_ring(P.y, n) == mod_ring(Q.y, n));
     }
 
     /**
@@ -294,31 +326,28 @@ public:
      */
     ECPoint double_point(const ECPoint& P) const {
         if (!point_is_on_curve(P)) {
-            throw PointNotOnCurveException("Point P (" + P.x.get_str() + ", " + P.y.get_str() + ") is not on the elliptic curve.");
+            throw PointNotOnCurveException("Point " + P.to_string() + " is not on curve " + (this)->to_string());
         }
 
-        if (P.is_infinity || P.y == 0) {
+        if (P.is_infinity || P.y % n == 0) {
             return ECPoint(); // Result is the point at infinity.
         }
 
         // Calculate the slope (lambda)
-        mpz_class numerator = (3 * P.x * P.x + a) % n;
-        mpz_class denominator = (2 * P.y) % n;
+        const mpz_class numerator = mod_ring(3 * P.x * P.x + a, n);
+        mpz_class denominator = mod_ring(2 * P.y, n);  // will be inverted in next step
 
-        mpz_class gcd;
         if (mpz_invert(denominator.get_mpz_t(), denominator.get_mpz_t(), n.get_mpz_t()) == 0) {
+            mpz_class gcd;
             mpz_gcd(gcd.get_mpz_t(), denominator.get_mpz_t(), n.get_mpz_t());
-            throw NonInvertibleElementException(n, 2 * P.y, gcd);
+            throw NonInvertibleElementException(n, denominator, gcd);
         }
 
-        mpz_class lambda = (numerator * denominator) % n;
+        const mpz_class lambda = mod_ring(numerator * denominator, n);
 
         // Calculate resulting coordinates
-        mpz_class x3 = (lambda * lambda - 2 * P.x) % n;
-        if (x3 < 0) x3 += n;
-
-        mpz_class y3 = (lambda * (P.x - x3) - P.y) % n;
-        if (y3 < 0) y3 += n;
+        const mpz_class x3 = mod_ring(lambda * lambda - 2 * P.x, n);
+        const mpz_class y3 = mod_ring(lambda * (P.x - x3) - P.y, n);
 
         return ECPoint(x3, y3);
     }
@@ -333,38 +362,37 @@ public:
      * @throws NonInvertibleElementException if the slope denominator is not invertible.
      */
     ECPoint add_unequal_points(const ECPoint& P, const ECPoint& Q) const {
-        // ToDo: checke, ob inverse dann point at infinity ausgeben
         if (!point_is_on_curve(P)) {
-            throw PointNotOnCurveException("Point P (" + P.x.get_str() + ", " + P.y.get_str() + ") is not on the elliptic curve.");
+            throw PointNotOnCurveException("Point " + P.to_string() + " is not on curve " + (this)->to_string());
         }
         if (!point_is_on_curve(Q)) {
-            throw PointNotOnCurveException("Point Q (" + Q.x.get_str() + ", " + Q.y.get_str() + ") is not on the elliptic curve.");
+            throw PointNotOnCurveException("Point " + Q.to_string() + " is not on curve " + (this)->to_string());
         }
         if (points_are_equal(P, Q)) {
-            throw std::invalid_argument("Points P and Q are equal. Use point doubling instead.");
+            throw std::invalid_argument("Points " + P.to_string() + " and " + Q.to_string() + " are equal. Use point doubling instead.");
         }
 
         if (P.is_infinity) return Q;
         if (Q.is_infinity) return P;
+        // Check if Q = -P
+        const ECPoint inverse_P(P.x, -1*P.y);
+        if (points_are_equal(inverse_P, Q)) return ECPoint(); // Result is the point at infinity.
 
         // Calculate the slope (lambda)
-        mpz_class numerator = (Q.y - P.y) % n;
-        mpz_class denominator = (Q.x - P.x) % n;
+        const mpz_class numerator = mod_ring(Q.y - P.y, n);
+        mpz_class denominator = mod_ring(Q.x - P.x, n);
 
-        mpz_class gcd;
         if (mpz_invert(denominator.get_mpz_t(), denominator.get_mpz_t(), n.get_mpz_t()) == 0) {
+            mpz_class gcd;
             mpz_gcd(gcd.get_mpz_t(), denominator.get_mpz_t(), n.get_mpz_t());
-            throw NonInvertibleElementException(n, Q.x - P.x, gcd);
+            throw NonInvertibleElementException(n, denominator, gcd);
         }
 
-        mpz_class lambda = (numerator * denominator) % n;
+        const mpz_class lambda = mod_ring(numerator * denominator, n);
 
         // Calculate resulting coordinates
-        mpz_class x3 = (lambda * lambda - P.x - Q.x) % n;
-        if (x3 < 0) x3 += n;
-
-        mpz_class y3 = (lambda * (P.x - x3) - P.y) % n;
-        if (y3 < 0) y3 += n;
+        const mpz_class x3 = mod_ring(lambda * lambda - P.x - Q.x, n);
+        const mpz_class y3 = mod_ring(lambda * (P.x - x3) - P.y, n);
 
         return ECPoint(x3, y3);
     }
@@ -394,19 +422,18 @@ public:
      */
     ECPoint scalar_multiplication(const mpz_class& k, const ECPoint& P) const {
         if (!point_is_on_curve(P)) {
-            throw PointNotOnCurveException("Point P (" + P.x.get_str() + ", " + P.y.get_str() + ") is not on the elliptic curve.");
+            throw PointNotOnCurveException("Point " + P.to_string() + " is not on curve " + (this)->to_string());
         }
 
-        // Initialize result as the point at infinity (neutral element for addition)
-        ECPoint result; // Defaults to the point at infinity
+        ECPoint result; // Initialize result as the point at infinity (neutral element for addition)
         ECPoint current = P;
         mpz_class scalar = k;
 
         while (scalar > 0) {
             // Check the least significant bit
             if (scalar % 2 == 1) {
-                if (result.is_infinity) {
-                    result = current; // no computation needed
+                if (result.is_infinity) {  // here, no computation needed
+                    result = current;
                 } else {
                     result = add_points(result, current);
                 }
@@ -426,9 +453,9 @@ public:
 
 
 /**
- * @brief Computes the exponent `e` such that `e = log_p(C + 2*sqrt(C) + 1)`.
+ * @brief Computes the exponent `e` such that `e = floor(log_p(C + 2*sqrt(C) + 1))`.
  *
- * This function is part of the Lenstra algorithm. The term `C + 2*sqrt(C) + 1` arises from the Hasse Bound (1933).
+ * This function is part of the Lenstra algorithm. The term `C + 2*sqrt(C) + 1` stems from the Hasse Bound (1933).
  * Since the GMP library lacks native logarithmic and exponential functions, precision may be lost when converting to and from double.
  *
  * @param C The input integer for which the computation is performed.
@@ -456,7 +483,7 @@ mpz_class get_exp_for_prime(const mpz_class& C, const mpz_class& p) {
  * @param N The number to be validated.
  * @throw std::invalid_argument if the number is divisible by 2, 3, or is a perfect power.
  */
-void check_input(const mpz_class& N) {
+void check_input_for_lenstra(const mpz_class& N) {
     if (N % 2 == 0) {
         throw std::invalid_argument("N: " + N.get_str() + "is divisible by 2.");
     }
@@ -468,7 +495,6 @@ void check_input(const mpz_class& N) {
     }
 
 }
-
 
 
 /**
@@ -488,27 +514,23 @@ void check_input(const mpz_class& N) {
  */
 mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_class& C)
 {
-    check_input(N);  // check if N satisfies prerequisites
+    check_input_for_lenstra(N);  // check if N satisfies prerequisites for the algorithm
 
     // Random values for a,u,v
     mpz_class a, u, v;
     gmp_randstate_t state;
     gmp_randinit_default(state); // Initialize the random state
     gmp_randseed_ui(state, std::random_device{}()); // Seed with a random value
+    mpz_urandomm(a.get_mpz_t(), state, N.get_mpz_t());
+    mpz_urandomm(u.get_mpz_t(), state, N.get_mpz_t());
+    mpz_urandomm(v.get_mpz_t(), state, N.get_mpz_t());
 
-    mpz_urandomm(a.get_mpz_t(),state,N.get_mpz_t());
-    mpz_urandomm(u.get_mpz_t(),state,N.get_mpz_t());
-    mpz_urandomm(v.get_mpz_t(),state,N.get_mpz_t());
-
-    // Calculate b, such that P(u,v) is on E(a,b,Z/NZ)
-    mpz_class b = (((v * v) % N) - ((u * u * u) % N) - ((a * u) % N) % N) % N; // b = (v^2 - u^3 - au) mod N
-    if (b < 0) {b += N;}  // in case b is negative
+    // Calculate b in Z/NZ, such that P(u,v) is on E(a,b,Z/NZ)
+    const mpz_class b = mod_ring(((v * v) % N) - ((u * u * u) % N) - ((a * u) % N), N); // b = (v^2 - u^3 - au) mod N
 
     try {
-        // Try to initialize elliptic curve
-        EllipticCurve E(a,b,N);
-        // Elliptic point initialization
-        const ECPoint P(u,v);
+        const EllipticCurve E(a,b,N);  // Try to initialize curve, may result in SingularEllipticCurveException
+        const ECPoint P(u,v);  // Elliptic point initialization
         ECPoint Q(P.x, P.y);  // Q = P
 
         // Iterate through primes up to B
@@ -518,16 +540,13 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
             // For-loop from 0 up to e-1
             for (mpz_class j = 0; j < e; ++j) {
                 std::cout << "Iteration j = " << j << std::endl;  //ToDo: get out
-                const ECPoint tmp = E.scalar_multiplication(prime,Q);
-                Q = tmp;
+                Q = E.scalar_multiplication(prime,Q);
             }
             // Dummy statement (replace this with actual logic in the loop)
             std::cout << "Processing prime: " << prime.get_str() << std::endl;  //ToDo: get out
             // Get the next prime
             mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
         }
-        // No factor found, algorithm unsuccessful
-        throw UnsuccessfulLenstraAlgorithmException("Reached end of lenstra algorithm.");
     } catch (const SingularEllipticCurveException& exc) {
         if (exc.gcd > 1 && exc.gcd < N) {  // we found non-trivial divisor of N; i.e., gdc(((4 * a^3 + 27 * b^2) mod n), n)
             return exc.gcd;
@@ -537,6 +556,8 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
     } catch (const NonInvertibleElementException& exc) {  // we found an element not invertible over Z/nZ
         return exc.gcd;
     }
+    // No factor found, algorithm unsuccessful
+    throw UnsuccessfulLenstraAlgorithmException("Reached end of lenstra algorithm.");
 }
 
 
@@ -959,32 +980,29 @@ void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_c
     while (divisor <= 1) {
         try {
             divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
-        } catch (const UnsuccessfulLenstraAlgorithmException&) {
+        } catch (const UnsuccessfulLenstraAlgorithmException&) {  // terminated unsuccessfully
         }
         C_tmp = C_tmp * 2; // Increase (i.e, double) C
+        std::cout << "UnsuccessfulLenstraAlgorithmException. Increased C to C_tmp: " << C_tmp << std::endl;  // ToDo: raus
         B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
+        std::cout << "UnsuccessfulLenstraAlgorithmException. Increased B to B_tmp: " << B_tmp << std::endl;  // ToDo: raus
 
     }
 
     // Check if the divisor is prime
     prime_status = mpz_probab_prime_p(divisor.get_mpz_t(), 27);
     if (prime_status > 0) { // Divisor is prime or probably prime
-        // Divide out the maximal power of the prime divisor
-        unsigned int exponent = divide_out_maximal_power(N, divisor);
-
+        const unsigned int exponent = divide_out_maximal_power(N, divisor);
         // Add the prime factor
-        Factor factor;
         factor.factor = divisor;
         factor.exponent = exponent;
-        factor.is_prime = prime_status; // Definitely prime or probable prime
+        factor.is_prime = prime_status;
         factors.push_back(factor);
     } else {
-        // Divisor is not prime, further factorize it
-        mpz_class divisor_copy = divisor; // Create a copy to avoid modification
+        // Divisor is not prime, further factorize it (recursion)
+        mpz_class divisor_copy = divisor; // Create a copy to avoid modification (need original divisor below)
         factorize_with_elliptic_curves(divisor_copy, B_tmp, C_tmp, m_curves, factors);  //ToDo: teste mal hier ob mit B und C (statt B_tmp, C_tmp)
-
-        // Update N by dividing it by the divisor
-        N /= divisor;
+        N /= divisor;  // Update N by dividing it by the divisor
     }
 
     // Factorize the remaining part of N
