@@ -5,7 +5,6 @@
 #include <list>
 #include <chrono>
 #include <stdexcept>
-#include <random>
 
 #include "trial_division.h"
 #include "helper.h"

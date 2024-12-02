@@ -448,13 +448,16 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
             mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
         }
     } catch (const SingularEllipticCurveException& exc) {
-        if (exc.gcd > 1 && exc.gcd < N) {  // we found non-trivial divisor of N; i.e., gdc(((4 * a^3 + 27 * b^2) mod n), n)
+        if (exc.gcd > 1 && exc.gcd < N) {  // we found non-trivial divisor of N
             return exc.gcd;
         }
         // Now, we know exc.gcd == N
         throw DiscriminantMultipleOfNException("Discriminant is multiple of N: " + N.get_str());
     } catch (const NonInvertibleElementException& exc) {  // we found an element not invertible over Z/nZ
-        return exc.gcd;
+        if (exc.gcd > 1 && exc.gcd < N) {  // we found non-trivial divisor of N
+            return exc.gcd;
+        }
+        throw UnsuccessfulLenstraAlgorithmException("Unlucky event GCD(element, N) = N ");
     }
     // No factor found, algorithm unsuccessful
     throw UnsuccessfulLenstraAlgorithmException("Reached end of lenstra algorithm.");
