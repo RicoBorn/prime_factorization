@@ -21,8 +21,8 @@ extern const int DEFAULT_C;  // stage-2 bound: if set to 0, it will be calculate
  */
 class SingularEllipticCurveException : public std::invalid_argument {
 public:
-    mpz_class a;     ///< a \in Z/nZ.
-    mpz_class b;     ///< b \in Z/nZ.
+    mpz_class a;     ///< a \in Z/nZ (coefficient in the short Weierstrass-Equation).
+    mpz_class b;     ///< b \in Z/nZ (coefficient in the short Weierstrass-Equation).
     mpz_class n;     ///< Modulus n.
     mpz_class gcd;   ///< GCD of ((4 * a^3 + 27 * b^2) mod n) and n. To be a singular curve, this must not be 1
 
@@ -173,13 +173,13 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
 /**
  * @brief Handles the factorization of a perfect power by decomposing it into its base and exponent.
  */
-void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
 
 
 /**
  * @brief Factorizes a number using elliptic curve factorization.
  */
-void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
 
 
 #endif //ELLIPTIC_CURVE_H

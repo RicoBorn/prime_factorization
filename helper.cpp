@@ -81,6 +81,9 @@ unsigned int divide_out_maximal_power(mpz_class& T, const mpz_class& P)
 }
 
 
+/**
+ * @brief Default constructor initializes the factor with exponent 0, factor 1, and non-prime status.
+ */
 Factor::Factor()
 {   exponent = 0;
     is_prime = 0;

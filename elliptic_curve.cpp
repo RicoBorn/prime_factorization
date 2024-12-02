@@ -210,7 +210,6 @@ const mpz_class& EllipticCurve::get_a() const { return a; }
 const mpz_class& EllipticCurve::get_b() const { return b; }
 const mpz_class& EllipticCurve::get_modulus() const { return n; }
 
-// to_string method
 std::string EllipticCurve::to_string() const {
     return "E(" + a.get_str() + "," + b.get_str() + ",Z/" + n.get_str() + "Z)";
 }
@@ -396,7 +395,6 @@ ECPoint EllipticCurve::scalar_multiplication(const mpz_class& k, const ECPoint& 
 }
 
 
-
 /**
  * @brief Executes Lenstra's elliptic curve factorization algorithm on the given number.
  *
@@ -464,7 +462,6 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
 }
 
 
-
 /**
  * @brief Executes the Lenstra elliptic curve factorization algorithm multiple times.
  *
@@ -493,7 +490,18 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
 }
 
 
-void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+/**
+ * @brief Handles the factorization of a perfect power by decomposing it into its base and exponent.
+ *
+ * This function performs recursive factorization on the base and updates the list of factors.
+ *
+ * @param N The perfect power to factorize.
+ * @param B The prime bound for elliptic curve factorization.
+ * @param C Parameter controlling the randomness of curves.
+ * @param m_curves Number of elliptic curves to use for factorization.
+ * @param factors The list of factors to be updated with results.
+ */
+void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
     // Decompose N into a^b (minimal a, maximal b)
     auto [k, m] = get_smallest_base_biggest_exponent_for_perfect_power(N);
 
@@ -518,10 +526,22 @@ void handle_perfect_power(mpz_class N, const mpz_class& B, const mpz_class& C, c
         factors.push_back(factor);  // Add the updated factor to the main list
     }
 
-};
+}
 
 
-void factorize_with_elliptic_curves(mpz_class N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+/**
+ * @brief Factorizes a number using elliptic curve factorization.
+ *
+ * Combines perfect power decomposition, and Lenstra's elliptic curve algorithm
+ * to fully factorize `N` into its prime factors.
+ *
+ * @param N The number to factorize (modified during computation).
+ * @param B The prime bound for elliptic curve factorization.
+ * @param C Parameter controlling the randomness of curves.
+ * @param m_curves Number of elliptic curves to use for factorization.
+ * @param factors The list of factors to be updated with results.
+ */
+void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
     // First, ensure N is not divisible by 2 or 3 (divide out if necessary)
     Factor factor;
     mpz_class P("2");

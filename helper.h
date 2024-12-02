@@ -33,6 +33,10 @@ unsigned int divide_out_maximal_power(mpz_class& T, const mpz_class& P);
 /**
  * @class Factor
  * @brief Represents a (prime) factor with an associated exponent.
+ *
+ * Stores information about a number, including whether it is prime,
+ * its exponent (used for representing powers such as 2^6), and
+ * the factor itself (preferably a prime number).
  */
 class Factor {
 public:
@@ -78,7 +82,6 @@ enum NumberMode : int {
     CunninghamNumber = 2,
     TestNumber = 3,
     RSANumber = 4,
-    NotImplemented = 5
 };
 
 
