@@ -437,11 +437,8 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
             mpz_class e = get_exp_for_prime(C,prime);
             // For-loop from 0 up to e-1
             for (mpz_class j = 0; j < e; ++j) {
-                std::cout << "Iteration j = " << j << std::endl;  //ToDo: get out
                 Q = E.scalar_multiplication(prime,Q);
             }
-            // Dummy statement (replace this with actual logic in the loop)
-            std::cout << "Processing prime: " << prime.get_str() << std::endl;  //ToDo: get out
             // Get the next prime
             mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
         }
