@@ -7,7 +7,7 @@
 #include <gmpxx.h>
 
 #include "helper.h"
-#include "testzahlen.h"
+#include "test_numbers.h"
 
 
 /**
@@ -158,7 +158,7 @@ UnknownNumberModeException::UnknownNumberModeException(const std::string& messag
  * @brief Generates numbers for factorization based on user input and mode.
  *
  * Converts a user-provided input (string and mode) into a number to be factored.
- * Function implementations are in `testzahlen.h` and `testzahlen.cpp`.
+ * Function implementations are in `test_numbers.h` and `test_numbers.cpp`.
  *
  * @param number_as_string The number provided by the user.
  * @param number_mode Mode to interpret the input number.
@@ -169,8 +169,8 @@ mpz_class generate_number_from_user_input(const std::string& number_as_string, c
         case DirectNumber: return mpz_class(number_as_string);
         case FermatNumber: return Fermat(std::stoi(number_as_string));
         case CunninghamNumber: return Cunningham(std::stoi(number_as_string));
-        case TestNumber: return TestzahlB(std::stoi(number_as_string));
-        case RSANumber: return RSAZahl(std::stoi(number_as_string));
+        case TestNumber: return TestNumberB(std::stoi(number_as_string));
+        case RSANumber: return TestRSANumber(std::stoi(number_as_string));
         default: throw UnknownNumberModeException("Unknown mode " + std::to_string(number_mode) + " provided.");
     }
 }

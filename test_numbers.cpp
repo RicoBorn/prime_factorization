@@ -1,9 +1,23 @@
-/* Die Datei "testzahlen.cpp" enthält die Funktionen zur Erzeugung der Testzahlen zum Praktikum Algebra 2022 */
-#include "testzahlen.h"
+/**
+* @file test_numbers.cpp
+ * @brief Contains functions for generating test numbers.
+ */
+
 #include <gmpxx.h>
 #include <string>
 
-/* Hilfsfunktion für schnelle Potenzierung bei der Erzeugung der Fermatzahlen*/
+#include "test_numbers.h"
+
+
+/**
+ * @brief Helper function for fast exponentiation.
+ *
+ * This function computes `n^p` efficiently using recursive squaring.
+ *
+ * @param n The base (integer).
+ * @param p The exponent (integer).
+ * @return The result of `n` raised to the power `p`.
+ */
 unsigned long int aux_fast_exp(int n, int p)
 {
     if(p == 0)
@@ -15,14 +29,23 @@ unsigned long int aux_fast_exp(int n, int p)
             unsigned long int tmp = aux_fast_exp(n, p/2);
             return tmp*tmp;
     }
-   else
+    else
     {
             unsigned long int tmp = aux_fast_exp(n, p-1);
             return tmp*n;
     }
 }
 
-/*Fermat(k) gibt die k-te Fermat-Zahl zurück. (Hinweis: k sollte nicht größer als 30 gewählt werden) */
+
+/**
+ * @brief Computes the k-th Fermat number.
+ *
+ * Fermat numbers are defined as \( F_k = 2^{2^k} + 1 \). This function generates
+ * the k-th Fermat number using fast exponentiation.
+ *
+ * @param k The index of the Fermat number to compute (recommended \( k \leq 30 \)).
+ * @return The k-th Fermat number as a `mpz_class`.
+ */
 mpz_class Fermat(unsigned int k){
     mpz_class f("2");
     mpz_t tmp;
@@ -32,7 +55,17 @@ mpz_class Fermat(unsigned int k){
     mpz_class fneu (tmp);
     return fneu+1; 
 }
-/*Cunningham(k) gibt die k-stellige Zahl 111...1111 (vgl. Cunningham Project)*/
+
+
+/**
+ * @brief Generates a Cunningham number with k digits.
+ *
+ * A Cunningham number is a number composed entirely of ones (e.g., 11, 111, 1111, etc.).
+ * This function generates such a number with exactly `k` digits.
+ *
+ * @param k The number of digits in the Cunningham number (1 <= k < 10000).
+ * @return The Cunningham number as a `mpz_class`.
+ */
 mpz_class Cunningham(int k){
     
     if(k > 0 and k < 10000)
@@ -48,8 +81,18 @@ mpz_class Cunningham(int k){
     
     return mpz_class("1");
 }
-/* Einfache Testzahlen B1,...,B10 (siehe Moodle Lernumgebung)*/
-mpz_class TestzahlB(int k){
+
+
+/**
+ * @brief Generates predefined test numbers B1, ..., B10.
+ *
+ * This function provides a predefined test number corresponding to the input index.
+ * These numbers are used for specific algebraic tasks.
+ *
+ * @param k The index of the test number (2 <= k <= 10).
+ * @return The test number as a `mpz_class`.
+ */
+mpz_class TestNumberB(int k){
     unsigned int N =6533;
     switch(k) {
       case 2:
@@ -83,8 +126,17 @@ mpz_class TestzahlB(int k){
     
     return mpz_class(N);
 }
-/* RSAZahl(k) gibt die RSA-Zahl R_k zurück (siehe Moodle Lernumgebung) */
-mpz_class RSAZahl(int k){
+
+
+/**
+ * @brief Retrieves the RSA number R_k.
+ *
+ * This function returns a predefined RSA number \( R_k \) based on the input index `k`.
+ *
+ * @param k The index of the RSA number.
+ * @return The RSA number as a `mpz_class`.
+ */
+mpz_class TestRSANumber(int k){
     mpz_class N("1");
     switch(k) {
         case 9:

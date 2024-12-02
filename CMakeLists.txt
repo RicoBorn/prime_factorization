@@ -12,21 +12,20 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GMPXX REQUIRED IMPORTED_TARGET gmpxx)
 
 
-# ToDo: ändere Namen (testzahlen usw. factorzitaion dann raus)
 # Gather all source and header files
 set(SOURCES
         main.cpp
         elliptic_curve.cpp
         helper.cpp
         trial_division.cpp
-        testzahlen.cpp
+        test_numbers.cpp
 )
 
 set(HEADERS
         elliptic_curve.h
         helper.h
         trial_division.h
-        testzahlen.h
+        test_numbers.h
 )
 
 # Add the executable

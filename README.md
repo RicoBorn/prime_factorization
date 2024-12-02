@@ -10,7 +10,7 @@ After you have successfully installed the GMP-Library, this project can be built
 ### Option 1: Direct Compilation with g++
 For a quick setup, you can directly compile the project using the following command:
 ```bash
-g++ -std=c++17 main.cpp testzahlen.cpp helper.cpp trial_division.cpp elliptic_curve.cpp -lgmp -lgmpxx
+g++ -std=c++17 main.cpp test_numbers.cpp helper.cpp trial_division.cpp elliptic_curve.cpp -lgmp -lgmpxx
 ```
 ### Option 2: Build Using CMake
 For a more robust and platform-independent build process, you can use CMake. This is the recommended method for larger projects or when working on different systems.
