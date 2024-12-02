@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "testzahlen.h"
-#include "factorization.h"
 
 /* compilation: g++ -std=c++11 factorization.cpp testzahlen.cpp -lgmp -lgmpxx */
 
@@ -210,13 +209,9 @@ public:
     ECPoint(const mpz_class& x, const mpz_class& y) : x(x), y(y), is_infinity(false) {}
     ECPoint() : is_infinity(true) {}
 
-    // to_string method
     std::string to_string() const {
-        if (is_infinity) {
-            return "At Infinity";
-        } else {
-            return "(" + x.get_str() + ", " + y.get_str() + ")";
-        }
+        if (is_infinity) return "At Infinity";
+        return "(" + x.get_str() + ", " + y.get_str() + ")";
     }
 };
 
