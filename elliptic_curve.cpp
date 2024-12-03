@@ -10,7 +10,7 @@
 #include "helper.h"
 
 
-const int DEFAULT_NUM_CURVES = 20;  // Number of elliptic curves to try before increasing bounds
+const int DEFAULT_NUM_CURVES = 80;  // Number of elliptic curves to try before increasing bounds
 const int DEFAULT_B = 0;  // stage-1 bound: if set to 0, it will be calculated at run time (as a function of C)
 const int DEFAULT_C = 0;  // stage-2 bound: if set to 0, it will be calculated at run time (as a function of N)
 
