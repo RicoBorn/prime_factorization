@@ -9,6 +9,15 @@ To build this project, you need the GMP (GNU Multiple Precision Arithmetic Libra
 Ensure the library is installed and accessible on your system before proceeding with the build.
 
 ## Building the project
+It might be necessary to set the following environment variables before building (you may include them in your `.zshrc` (on macOS) or `.bashrc` (on Linux)):
+```bash
+# for C++ compiling and linking (gmp library)
+export LIBRARY_PATH="<lib_path>:$LIBRARY_PATH"
+export DYLD_LIBRARY_PATH="<lib_path>:$DYLD_LIBRARY_PATH"
+export CPLUS_INCLUDE_PATH="<include>:$CPLUS_INCLUDE_PATH"
+```
+Replace `<lib_path>` with the path to the GMP library (e.g., `/opt/homebrew/opt/gmp/lib`) and `<include>` with the include path (e.g., `/opt/homebrew/include`).
+
 You can build the project using one of the two following methods: direct compilation with `g++` or using CMake.
 ### Option 1: Direct Compilation with g++
 For a quick setup, you can directly compile the project using the following command:
