@@ -173,26 +173,28 @@ int main(int argc, char *argv[]) {
         factors = trial_division_bounded(N,trial_division_bound);
     }
 
-    // Generate starting values for B (stage-1 bound) and C (stage-2 bound) for elliptic curve factorization
-    mpz_class sqrt_N;
-    mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
-    if (C == DEFAULT_C || C > (sqrt_N + 1)) {  // None or unreasonable value for C provided by user
-        C = get_smallest_prime_bound(N, mode==RSANumber);
-    }
-    if (B == DEFAULT_B) {
-        B = calculate_base_prime_bound_from_smallest_prime_bound(C);
-    }
+    if (N > 1) {
+        // Generate starting values for B (stage-1 bound) and C (stage-2 bound) for elliptic curve factorization
+        mpz_class sqrt_N;
+        mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
+        if (C == DEFAULT_C || C > (sqrt_N + 1)) {  // None or unreasonable value for C provided by user
+            C = get_smallest_prime_bound(N, mode==RSANumber);
+        }
+        if (B == DEFAULT_B) {
+            B = calculate_base_prime_bound_from_smallest_prime_bound(C);
+        }
 
-    //ToDo: Take out
-    //////////////////// TEST ///////////////
-    std::cout << "N: " << N << std::endl;
-    std::cout << "C: " << C << std::endl;
-    std::cout << "B: " << B << std::endl;
-    std::cout << "num_curves: " << num_curves << std::endl;
-    std::cout << "no_trial_division: " << no_trial_division << std::endl;
-    //////////////////// TEST ///////////////
+        //ToDo: Take out
+        //////////////////// TEST ///////////////
+        std::cout << "N: " << N << std::endl;
+        std::cout << "C: " << C << std::endl;
+        std::cout << "B: " << B << std::endl;
+        std::cout << "num_curves: " << num_curves << std::endl;
+        std::cout << "no_trial_division: " << no_trial_division << std::endl;
+        //////////////////// TEST ///////////////
 
-    factorize_with_elliptic_curves(N, B, C, num_curves, factors);
+        factorize_with_elliptic_curves(N, B, C, num_curves, factors);
+    }
 
     // Stop timing ----------
     std::chrono::time_point<std::chrono::high_resolution_clock> end = std::chrono::high_resolution_clock::now();
