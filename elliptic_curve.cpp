@@ -10,7 +10,7 @@
 #include "helper.h"
 
 
-const int DEFAULT_NUM_CURVES = 50;  // Number of elliptic curves to try before increasing bounds
+const int DEFAULT_NUM_CURVES = 20;  // Number of elliptic curves to try before increasing bounds
 const int DEFAULT_B = 0;  // stage-1 bound: if set to 0, it will be calculated at run time (as a function of C)
 const int DEFAULT_C = 0;  // stage-2 bound: if set to 0, it will be calculated at run time (as a function of N)
 
@@ -589,11 +589,11 @@ void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_
         try {
             divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
         } catch (const UnsuccessfulLenstraAlgorithmException&) {  // terminated unsuccessfully
+            C_tmp = C_tmp * 2; // Increase (i.e, double) C
+            std::cout << "UnsuccessfulLenstraAlgorithmException. Increased C to C_tmp: " << C_tmp << std::endl;  // ToDo: raus
+            B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
+            std::cout << "UnsuccessfulLenstraAlgorithmException. Increased B to B_tmp: " << B_tmp << std::endl;  // ToDo: raus
         }
-        C_tmp = C_tmp * 2; // Increase (i.e, double) C
-        std::cout << "UnsuccessfulLenstraAlgorithmException. Increased C to C_tmp: " << C_tmp << std::endl;  // ToDo: raus
-        B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
-        std::cout << "UnsuccessfulLenstraAlgorithmException. Increased B to B_tmp: " << B_tmp << std::endl;  // ToDo: raus
 
     }
 
