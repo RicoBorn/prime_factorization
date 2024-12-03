@@ -92,13 +92,13 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
         } else if (arg == "--stage1_bound" || arg == "-b") {
-            if (i + 1 < argc && is_positive_integer(argv[i + 1])) B = std::stoi(argv[++i]);
+            if (i + 1 < argc && is_positive_integer(argv[i + 1])) B = argv[++i];
             else {
                 std::cerr << "Error: --stage1_bound/-b requires a positive integer value." << std::endl;
                 return EXIT_FAILURE;
             }
         } else if (arg == "--stage2_bound" || arg == "-c") {
-            if (i + 1 < argc && is_positive_integer(argv[i + 1])) C = std::stoi(argv[++i]);
+            if (i + 1 < argc && is_positive_integer(argv[i + 1])) C = argv[++i];
             else {
                 std::cerr << "Error: --stage2_bound/-c requires a positive integer value." << std::endl;
                 return EXIT_FAILURE;
