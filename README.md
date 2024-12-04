@@ -44,3 +44,15 @@ After building, you can run the program with:
 ./prime_factorization
 ```
 The program expects input for numbers to factorize, and it will compute their prime factors using elliptic curve techniques.
+You can customize the factorization process using several optional command-line arguments.
+
+### Command-line arguments
+| Option                     | Description                                                                                                          | Default Value                               |
+|----------------------------|----------------------------------------------------------------------------------------------------------------------|---------------------------------------------|
+| `--num_mode`, `-m`          | Specifies the type of number to be factored. Supported values: Fermat, Cunningham, Test, RSA. If not provided, the program defaults to `DirectNumber` mode, where the user inputs a custom number. | `DirectNumber`                              |
+| `--stage1_bound`, `-b`      | Specifies the stage-1 bound (B) for elliptic curve factorization. This is the bound for prime bases.                | `DEFAULT_B` (per default a function of C)   |
+| `--stage2_bound`, `-c`      | Specifies the stage-2 bound (C) for elliptic curve factorization. This is the bound for the smallest prime factor of N. | `DEFAULT_C` (per default a function of N)   |
+| `--num_curves`, `-n`        | Specifies the number of elliptic curves used for factorization.                                                      | `DEFAULT_NUM_CURVES`                        |
+| `--no_trial_division`, `-nt`| Disables trial division as a preliminary factorization step.                                                         | `false` (trial division enabled by default) |
+| `--run_parallel`, `-p`      | Enables parallel execution of the factorization algorithm.                                                           | `false` (disabled by default)               |
+| `--num_threads`, `-t`       | Specifies the number of threads to use for parallel factorization. Must be a positive integer and not exceed 100.    | `DEFAULT_NUM_THREADS` (10)                  |

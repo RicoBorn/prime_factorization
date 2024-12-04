@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <random>
 #include <cmath>
+#include <thread>
+#include <vector>
+#include <mutex>
 
 #include "elliptic_curve.h"
 #include "helper.h"
@@ -13,6 +16,8 @@
 const int DEFAULT_NUM_CURVES = 80;  // Number of elliptic curves to try before increasing bounds
 const int DEFAULT_B = 0;  // stage-1 bound: if set to 0, it will be calculated at run time (as a function of C)
 const int DEFAULT_C = 0;  // stage-2 bound: if set to 0, it will be calculated at run time (as a function of N)
+const bool DEFAULT_IN_PARALLEL = false;  // Whether to run lenstra algorithm in multiple threads
+const int DEFAULT_NUM_THREADS = 10;  // Number of threads to use when running lenstra algorithm in parallel
 
 
 SingularEllipticCurveException::SingularEllipticCurveException(const mpz_class& a, const mpz_class& b, const mpz_class& n, const mpz_class& gcd)
@@ -460,6 +465,94 @@ mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mp
 
 
 /**
+ * @brief Runs the Lenstra elliptic curve factorization algorithm in a separate thread.
+ *
+ * This function is designed to execute the `run_lenstra_algorithm` in a thread. It attempts
+ * to find a non-trivial divisor of the input number `N` using elliptic curve factorization.
+ * The function acquires a lock to ensure that only one thread can update the shared variables
+ * (`found_divisor` and `divisor`) at a time, preventing race conditions in a multithreaded
+ * environment. If a divisor is found, the thread updates the shared `divisor` and sets the
+ * `found_divisor` flag to `true` to signal that a factor has been discovered.
+ *
+ * The function catches any exceptions thrown by the `run_lenstra_algorithm` function and ignores
+ * them if no divisor is found, allowing other threads to continue processing.
+ *
+ * @param N The number to be factorized. This is passed to the Lenstra algorithm.
+ * @param B The bound for the primes used in scalar multiplication for elliptic curve factorization.
+ * @param C The bound for the smallest prime, used in the calculation of the number of scalar
+ *          multiplications per prime.
+ * @param found_divisor A Boolean variable that signals if a divisor has been found.
+ * @param task_mutex A mutex used for synchronizing access to shared variables.
+ * @param divisor A `mpz_class` where the divisor will be stored if found.
+ */
+void run_lenstra_in_thread(const mpz_class& N, const mpz_class& B, const mpz_class& C,  bool& found_divisor, std::mutex& task_mutex, mpz_class& divisor) {
+    try {
+        const mpz_class tmp(run_lenstra_algorithm(N, B, C));
+        std::lock_guard<std::mutex> lock(task_mutex);  // Lock for other threads
+        if (!found_divisor) {  // Check if a divisor has already been found
+            divisor = tmp;
+            found_divisor = true;
+        }
+    } catch (const DiscriminantMultipleOfNException&) {
+    } catch (const UnsuccessfulLenstraAlgorithmException&) {
+    }
+}
+
+
+/**
+ * @brief Executes Lenstra's elliptic curve factorization algorithm multiple times in parallel.
+ *
+ * This function attempts to factorize the number `N` using the Lenstra elliptic curve
+ * factorization algorithm, running it up to `m_times` times in parallel across multiple threads.
+ * The algorithm is executed concurrently with a maximum of `n_threads` threads running at a time.
+ * If a non-trivial divisor of `N` is found by any thread, the result is returned immediately.
+ * If all attempts fail, an exception is thrown after all attempts have been made.
+ *
+ * @param N The number to be factorized. This is passed to the Lenstra algorithm.
+ * @param B The bound for the primes used in scalar multiplication for elliptic curve factorization.
+ * @param C The bound for the smallest prime, used in the calculation of the number of scalar
+ *          multiplications per prime.
+ * @param m_times The number of times the Lenstra algorithm should be executed in parallel.
+ * @param n_threads The maximum number of threads to run concurrently.
+ * @return mpz_class A non-trivial divisor of `N` if found by any of the parallel attempts.
+ * @throw UnsuccessfulLenstraAlgorithmException if no divisor is found after `m_times` parallel attempts.
+ */
+mpz_class run_lenstra_algorithm_multiple_times_in_parallel(const mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_times, const int& n_threads) {
+    // Synchronization variables
+    bool found_divisor = false;  // Indicates whether a divisor has been found by one of the threads
+    mpz_class divisor("1");
+    std::mutex task_mutex;
+
+    int attempts = 0;
+
+    // Repeated execution of threads in blocks
+    while (attempts < m_times && !found_divisor) {
+        std::vector<std::thread> threads;
+
+        // Start up to n_threads or the remaining tasks
+        for (int j = 0; j < n_threads && attempts < m_times; ++j) {
+            threads.emplace_back(run_lenstra_in_thread, N, B, C, std::ref(found_divisor), std::ref(task_mutex), std::ref(divisor));
+            ++attempts;  // Increment the total number of attempts
+        }
+
+        // Wait for all threads to complete
+        for (auto& t : threads) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+    }
+
+    // Check if valid divisor was found
+    if (found_divisor && divisor > 1) {
+        return divisor;
+    }
+
+    throw UnsuccessfulLenstraAlgorithmException("All " + std::to_string(m_times) + " attempts of Lenstra algorithm failed.");
+}
+
+
+/**
  * @brief Executes the Lenstra elliptic curve factorization algorithm multiple times.
  *
  * Repeats the Lenstra algorithm up to `m_times` in an attempt to find a factor.
@@ -497,8 +590,10 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
  * @param C Parameter controlling the randomness of curves.
  * @param m_curves Number of elliptic curves to use for factorization.
  * @param factors The list of factors to be updated with results.
+ * @param in_parallel Flag whether to run the lenstra algorithm in parallel (multiple threads)
+ * @param n_threads The number of threads to use (if the lenstra algorithm run in parallel)
  */
-void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors, const bool& in_parallel, const int& n_threads) {
     // Decompose N into a^b (minimal a, maximal b)
     auto [k, m] = get_smallest_base_biggest_exponent_for_perfect_power(N);
 
@@ -516,7 +611,7 @@ void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, 
 
     // k is composite, factorize further; Info: k cannot be a perfect power itself (otherwise m would've not been maximal)
     std::list<Factor> tmp_factors;
-    factorize_with_elliptic_curves(k, B, C, m_curves, tmp_factors);
+    factorize_with_elliptic_curves(k, B, C, m_curves, tmp_factors, in_parallel, n_threads);
     // Now that k is completely factorized, update prime factors (by multiplying all exponents by m)
     for (auto& factor : tmp_factors) {
         factor.exponent *= m;  // Multiply each exponent by m
@@ -537,8 +632,10 @@ void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, 
  * @param C Parameter controlling the randomness of curves.
  * @param m_curves Number of elliptic curves to use for factorization.
  * @param factors The list of factors to be updated with results.
+ * @param in_parallel Flag whether to run the lenstra algorithm in parallel (multiple threads)
+ * @param n_threads The number of threads to use (if the lenstra algorithm run in parallel)
  */
-void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors) {
+void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors, const bool& in_parallel, const int& n_threads) {
     // First, ensure N is not divisible by 2 or 3 (divide out if necessary)
     Factor factor;
     mpz_class P("2");
@@ -577,7 +674,7 @@ void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_
 
     // Check if N is a perfect power, and handle this case
     if (mpz_perfect_power_p(N.get_mpz_t()) > 0) {
-        handle_perfect_power(N, B, C, m_curves, factors);
+        handle_perfect_power(N, B, C, m_curves, factors, in_parallel, n_threads);
         return; // Stop further factorization since perfect power handling will decompose N
     }
 
@@ -587,14 +684,19 @@ void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_
     mpz_class divisor("1");
     while (divisor <= 1) {
         try {
-            divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
-        } catch (const UnsuccessfulLenstraAlgorithmException&) {  // terminated unsuccessfully
+            if (in_parallel) {
+                // Run in parallel using multiple threads
+                divisor = run_lenstra_algorithm_multiple_times_in_parallel(N, B_tmp, C_tmp, m_curves, n_threads);
+            } else {
+                // Run sequentially
+                divisor = run_lenstra_algorithm_multiple_times(N, B_tmp, C_tmp, m_curves);
+            }
+        } catch (const UnsuccessfulLenstraAlgorithmException&) {  // Terminated unsuccessfully
             C_tmp = C_tmp * 2; // Increase (i.e, double) C
             std::cout << "UnsuccessfulLenstraAlgorithmException. Increased C to C_tmp: " << C_tmp << std::endl;  // ToDo: raus
             B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
             std::cout << "UnsuccessfulLenstraAlgorithmException. Increased B to B_tmp: " << B_tmp << std::endl;  // ToDo: raus
         }
-
     }
 
     // Check if the divisor is prime
@@ -609,10 +711,10 @@ void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_
     } else {
         // Divisor is not prime, further factorize it (recursion)
         mpz_class divisor_copy = divisor; // Create a copy to avoid modification (need original divisor below)
-        factorize_with_elliptic_curves(divisor_copy, B_tmp, C_tmp, m_curves, factors);  //ToDo: teste mal hier ob mit B und C (statt B_tmp, C_tmp)
+        factorize_with_elliptic_curves(divisor_copy, B_tmp, C_tmp, m_curves, factors, in_parallel, n_threads);
         N /= divisor;  // Update N by dividing it by the divisor
     }
 
     // Factorize the remaining part of N
-    factorize_with_elliptic_curves(N, B_tmp, C_tmp, m_curves, factors);
+    factorize_with_elliptic_curves(N, B_tmp, C_tmp, m_curves, factors, in_parallel, n_threads);
 }

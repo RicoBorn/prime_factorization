@@ -17,7 +17,7 @@
  * This program factors a number based on user input and command-line parameters. The number
  * can represent a Fermat, Cunningham, RSA challenge number, or a custom (test) number. The
  * factorization can be customized using several optional parameters, including bounds for
- * elliptic curve factorization and toggling trial division.
+ * elliptic curve factorization, toggling trial division and running in parallel.
  *
  * ## Command-line Parameters
  *
@@ -49,6 +49,15 @@
  *    - Disables trial division as a preliminary factorization step.
  *    - Defaults to false (trial division is enabled by default).
  *
+ * 6. `--run_parallel` or `-p` (boolean flag, optional):
+ *    - Enables parallel execution (in multiple threads) of the factorization algorithm.
+ *    - Defaults to `DEFAULT_IN_PARALLEL` (which should be set to false by default).
+ *
+ * 7. `--num_threads` or `-t` (positive integer, optional):
+ *    - Specifies the number of threads to use in parallel factorization.
+ *    - Defaults to `DEFAULT_NUM_THREADS`.
+ *    - If `num_threads` exceeds 100, an error is raised.
+ *
  * ## Input Handling
  *
  * - If `--num_mode` or `-m` is provided, the program will ask the user for a specific k-value
@@ -68,6 +77,7 @@
  *      to a predefined bound (`TRIAL_DIV_BOUND`).
  *    - Use elliptic curve factorization for the remaining composite number, based on the
  *      stage-1 and stage-2 bounds and the specified number of curves.
+ *    - If `--run_parallel` is enabled, run the elliptic curve factorization in parallel.
  * 6. Print the elapsed time for the factorization process as well as the prime factors.
  *
  * @param argc Number of command-line arguments.
@@ -81,6 +91,8 @@ int main(int argc, char *argv[]) {
     mpz_class C = DEFAULT_C;
     int num_curves = DEFAULT_NUM_CURVES;
     bool no_trial_division = DEFAULT_NO_TRIAL_DIVISION;
+    bool run_parallel = DEFAULT_IN_PARALLEL;
+    int num_threads = DEFAULT_NUM_THREADS;
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -111,6 +123,20 @@ int main(int argc, char *argv[]) {
             }
         } else if (arg == "--no_trial_division" || arg == "-nt") {
             no_trial_division = true; // Boolean flag, no value expected
+        } else if (arg == "--run_parallel" || arg == "-p") {
+            run_parallel = true;  // Boolean flag to enable parallel execution
+        } else if (arg == "--num_threads" || arg == "-t") {
+            if (i + 1 < argc && is_positive_integer(argv[i + 1])) {
+                num_threads = std::stoi(argv[++i]);
+                if (num_threads > 100) {
+                    std::cerr << "Error: Number of threads should not exceed 100." << std::endl;
+                    return EXIT_FAILURE;
+                }
+            } else {
+                std::cerr << "Error: --num_threads/-t requires a positive integer value." << std::endl;
+                return EXIT_FAILURE;
+            }
+
         } else {
             std::cerr << "Error: Unknown parameter " << arg << std::endl;
             return EXIT_FAILURE;
@@ -184,16 +210,7 @@ int main(int argc, char *argv[]) {
             B = calculate_base_prime_bound_from_smallest_prime_bound(C);
         }
 
-        //ToDo: Take out
-        //////////////////// TEST ///////////////
-        std::cout << "N: " << N << std::endl;
-        std::cout << "C: " << C << std::endl;
-        std::cout << "B: " << B << std::endl;
-        std::cout << "num_curves: " << num_curves << std::endl;
-        std::cout << "no_trial_division: " << no_trial_division << std::endl;
-        //////////////////// TEST ///////////////
-
-        factorize_with_elliptic_curves(N, B, C, num_curves, factors);
+        factorize_with_elliptic_curves(N, B, C, num_curves, factors, run_parallel, num_threads);
     }
 
     // Stop timing ----------
@@ -210,34 +227,6 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS; // Program completed successfully
 }
 
-// Getestete Funktionen:
-// - get_smallest_base_biggest_exponent_for_perfect_power
-// - calculate_prime_bound_from_smallest_prime_bound
-
-
-// ToDo: brauche noch Funktion, die mit gegebenen N einen sinnvollen Startwert für B und C
-//  evtl. Idee: lasse mir C von "außen" mitgeben und berechne von dort B (mit Formel (14) - siehe S. 566)
-// ToDo: dann alles testen was elliptic Curve class angeht!
-// ToDo: next steps:
-//  - Recherchieren, überlegen, wie ich C (evtl. aus N) berechne...
-//  - Logik Schritt für Schritt durchgehen und prüfen
-//  - Verbesserungsvorschläge und prüfen lassen
-//  - Testen aller einzelnen funktionen
-//  - Testen des Gesamtkonstruktes
-//  - Faktorisieren der Testzahlen
-// Use elliptic curves factorization for remainder
-// ToDo: Funktionen schreiben: 1) get_C_from_N (das C als Funktion von N berechnet - siehe Maple)
-// ToDo: dann diesen Wert nutzen, um damit B zu berechnen (diese Funktion gibt es schon).
-// ToDo: diese Funktionen (falls B und C nicht mitgebenen wurden; d.h. 0 sind) hier anwenden und weitergeben...
-//  Funktionen auch innerhalb des algorithmus für elliptische Kurven nutzen!
-//  siehe auch was Prof. Kionke geschrieben hat (in Email)
-
-
-
-// Info: wie maple B und C berechnet: https://www.maplesoft.com/applications/Preview.aspx?id=3528
-//  - if nargs = 2 then B := boundB; else B := 2*length(n); fi;
-//  - if nargs = 3 then C := boundC; else C := ilog[2](n); fi;
-
 
 // Potential Improvements:
 // - Use faster way to identify all primes less or equal to bound B (e.g., sieve of Atkins), das muss aber abgeglichen
@@ -245,7 +234,7 @@ int main(int argc, char *argv[]) {
 // - Efficiency can be improved at several points (but often at the cost of readability). U.a.:
 //      - Berechnen der Primzahlen <= B
 //      - Handling der perfect powers
-// - Könnte multiprocessing nutzen, um parallel mehrere durchläufe für Lenstra zu machen
+// - Könnte multiprocessing nutzen (statt multithreading), um parallel mehrere durchläufe für Lenstra zu machen
 // - Siehe Cohen S489: Montgomerys Methode (Parallel Inverse Modulo N)
 // Muss wenn ich durchlaufe mal Memory checken (ob der voll läuft)
 

@@ -13,6 +13,8 @@
 extern const int DEFAULT_NUM_CURVES;  // Number of elliptic curves to try before increasing bounds
 extern const int DEFAULT_B;  // stage-1 bound: if set to 0, it will be calculated at run time (as a function of C)
 extern const int DEFAULT_C;  // stage-2 bound: if set to 0, it will be calculated at run time (as a function of N)
+extern const bool DEFAULT_IN_PARALLEL;  // Whether to run lenstra algorithm in multiple threads
+extern const int DEFAULT_NUM_THREADS;  // Number of threads to use when running lenstra algorithm in parallel
 
 
 /**
@@ -159,6 +161,18 @@ public:
 
 
 /**
+ * @brief Runs the Lenstra elliptic curve factorization algorithm in a separate thread.
+ */
+void run_lenstra_in_thread(const mpz_class& N, const mpz_class& B, const mpz_class& C,  bool& found_divisor, std::mutex& task_mutex, mpz_class& divisor);
+
+
+/**
+ * @brief Executes Lenstra's elliptic curve factorization algorithm multiple times in parallel.
+ */
+mpz_class run_lenstra_algorithm_multiple_times_in_parallel(const mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_times, const int& n_threads);
+
+
+/**
  * @brief Executes Lenstra's elliptic curve factorization algorithm on the given number.
  */
 mpz_class run_lenstra_algorithm(const mpz_class& N, const mpz_class& B, const mpz_class& C);
@@ -173,13 +187,13 @@ mpz_class run_lenstra_algorithm_multiple_times(const mpz_class& N, const mpz_cla
 /**
  * @brief Handles the factorization of a perfect power by decomposing it into its base and exponent.
  */
-void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+void handle_perfect_power(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors, const bool& in_parallel, const int& n_threads);
 
 
 /**
  * @brief Factorizes a number using elliptic curve factorization.
  */
-void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors);
+void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_class& C, const int& m_curves, std::list<Factor>& factors, const bool& in_parallel, const int& n_threads);
 
 
 #endif //ELLIPTIC_CURVE_H
