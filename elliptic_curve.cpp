@@ -95,18 +95,16 @@ mpz_class calculate_base_prime_bound_from_smallest_prime_bound(const mpz_class& 
  *
  * This function calculates the stage-2 bound as follows:
  *   - If: N is known to be RSA-Number there is not value of setting the bound for smallest prime to much less than sqrt(N)
- *     we calculate bound = floor(sqrt(N))/1000
- *   - If: N is a small number (i.e., up to 20 (decimal) digits), we simply calculate bound = floor(sqrt(N))
- *   - Else: it follows: https://www.maplesoft.com/applications/Preview.aspx?id=3528 and calculates bound = floor(log2(N))
+ *     we calculate bound = floor(sqrt(N))/1000 (as a heuristic)
+ *   - If: N is a small number (i.e., up to 20 digits), we simply calculate bound = floor(sqrt(N))
+ *   - Else: it follows: https://www.maplesoft.com/applications/Preview.aspx?id=3528 and calculates
+ *     bound = max(floor(log2(N)), known_viable_bound), with known_viable_bound=100000000000 (is based on empirical values)
  *
  * @param N The (composite) number.
  * @param is_rsa_number Boolean flag whether number is known to be an RSA-Number.
  * @return mpz_class The stage-2 bound.
  */
 mpz_class get_smallest_prime_bound(mpz_class& N, const bool is_rsa_number) {
-    //ToDo: mit meinem Programm "rumspielen" ich muss sehen, wie lange es dauert, bei verschiedenen C Werten und dass hier mit aufnehmen
-    //ToDo: evtl. noch "known lower bound" mit einbinden... (kennen ja durch trial division schon,dass kein kleiner Teiler mehr von N existiert...)
-
     mpz_class sqrt_N;
 
     if (is_rsa_number) {
@@ -114,13 +112,18 @@ mpz_class get_smallest_prime_bound(mpz_class& N, const bool is_rsa_number) {
         return sqrt_N / 100;
     }
 
-    if (get_number_of_decimal_digits(N) < 20) {
+    if (get_number_of_decimal_digits(N) <= 20) {
         mpz_sqrt(sqrt_N.get_mpz_t(), N.get_mpz_t());
         return sqrt_N;
 
     }
+
+    const mpz_class viable_bound("100000000000");  // empirical value; known to result in reasonable run times
     const size_t msb = mpz_sizeinbase(N.get_mpz_t(), 2);
     mpz_class bound = msb - 1;
+    if (viable_bound >= bound) {
+        return viable_bound;
+    }
 
     return bound;
 }
@@ -693,9 +696,7 @@ void factorize_with_elliptic_curves(mpz_class& N, const mpz_class& B, const mpz_
             }
         } catch (const UnsuccessfulLenstraAlgorithmException&) {  // Terminated unsuccessfully
             C_tmp = C_tmp * 2; // Increase (i.e, double) C
-            std::cout << "UnsuccessfulLenstraAlgorithmException. Increased C to C_tmp: " << C_tmp << std::endl;  // ToDo: raus
             B_tmp = calculate_base_prime_bound_from_smallest_prime_bound(C_tmp);  // Update B accordingly
-            std::cout << "UnsuccessfulLenstraAlgorithmException. Increased B to B_tmp: " << B_tmp << std::endl;  // ToDo: raus
         }
     }
 
