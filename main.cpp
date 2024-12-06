@@ -226,15 +226,3 @@ int main(int argc, char *argv[]) {
 
     return EXIT_SUCCESS; // Program completed successfully
 }
-
-
-// Potential Improvements:
-// - Use faster way to identify all primes less or equal to bound B (e.g., sieve of Atkins), das muss aber abgeglichen
-//   werden, da wenn ich sieb verwende, dann berechne ich wirklich alle, ohne dass ich u.U. wirklich alle benötige
-// - Efficiency can be improved at several points (but often at the cost of readability). U.a.:
-//      - Berechnen der Primzahlen <= B
-//      - Handling der perfect powers
-// - Könnte multiprocessing nutzen (statt multithreading), um parallel mehrere durchläufe für Lenstra zu machen
-// - Siehe Cohen S489: Montgomerys Methode (Parallel Inverse Modulo N)
-// Muss wenn ich durchlaufe mal Memory checken (ob der voll läuft)
-
