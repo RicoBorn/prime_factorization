@@ -6,13 +6,13 @@
 #include "trial_division.h"
 
 
-const std::string TRIAL_DIV_BOUND = "100000000";
+const std::string TRIAL_DIV_BOUND = "100000";
 const bool DEFAULT_NO_TRIAL_DIVISION = false;
 
 /**
- * @brief Factorizes N (and modifies it) using trial division up to a bound B.
+ * @brief Factorizes N (and modifies it) using trial division up to a bound B (i.e., bound for factors).
  *
- * Factorizes the number N by trial division up to a specified bound B
+ * Factorizes the number N by trial division up to a specified (factor) bound B
  * and checks if the remainder is a probable prime. Returns a list of found
  * prime factors. (For large values of N, selecting a large B can significantly
  * increase runtime.)
