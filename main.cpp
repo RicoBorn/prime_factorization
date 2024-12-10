@@ -45,7 +45,7 @@
  *    - Specifies the number of elliptic curves used for factorization.
  *    - Defaults to `DEFAULT_NUM_CURVES`.
  *
- * 5. `--no_trial_division` or `-nt` (boolean flag, optional):
+ * 5. `--no_trial` or `-nt` (boolean flag, optional):
  *    - Disables trial division as a preliminary factorization step.
  *    - Defaults to false (trial division is enabled by default).
  *
@@ -121,7 +121,7 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Error: --num_curves/-n requires a positive integer value." << std::endl;
                 return EXIT_FAILURE;
             }
-        } else if (arg == "--no_trial_division" || arg == "-nt") {
+        } else if (arg == "--no_trial" || arg == "-nt") {
             no_trial_division = true; // Boolean flag, no value expected
         } else if (arg == "--run_parallel" || arg == "-p") {
             run_parallel = true;  // Boolean flag to enable parallel execution
