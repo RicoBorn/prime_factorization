@@ -94,10 +94,10 @@ mpz_class calculate_base_prime_bound_from_smallest_prime_bound(const mpz_class& 
  * @brief Calculates stage-2 bound (bound for smallest prime) from N.
  *
  * This function calculates the stage-2 bound as follows:
- *   - If: N is known to be RSA-Number there is not value of setting the bound for smallest prime to much less than sqrt(N)
- *     we calculate bound = floor(sqrt(N))/1000 (as a heuristic)
+ *   - If: N is known to be RSA-Number there is not much value of setting the bound for smallest prime to much less than sqrt(N)
+ *     we calculate bound = floor(sqrt(N))/100 (as a heuristic)
  *   - If: N is a small number (i.e., up to 20 digits), we simply calculate bound = floor(sqrt(N))
- *   - Else: it follows: https://www.maplesoft.com/applications/Preview.aspx?id=3528 and calculates
+ *   - Else: we follow: https://www.maplesoft.com/applications/Preview.aspx?id=3528 and calculate
  *     bound = max(floor(log2(N)), known_viable_bound), with known_viable_bound=100000000000 (is based on empirical values)
  *
  * @param N The (composite) number.
